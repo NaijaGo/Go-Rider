@@ -1,4 +1,4 @@
-package com.example.naijago_ridersapp
+package com.naijago.gorider
 
 import android.app.Notification
 import android.app.NotificationChannel
