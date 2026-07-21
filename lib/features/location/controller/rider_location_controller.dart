@@ -110,11 +110,7 @@ class RiderLocationController extends GetxController {
   }
 
   Future<bool> _ensurePermission() async {
-    var permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-    }
-
+    final permission = await Geolocator.checkPermission();
     return permission != LocationPermission.denied &&
         permission != LocationPermission.deniedForever;
   }

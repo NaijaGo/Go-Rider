@@ -9,6 +9,7 @@ import '../../../core/widgets/app_background.dart';
 import '../../../core/widgets/section_card.dart';
 import '../../../routes/app_routes.dart';
 import '../../location/controller/rider_location_controller.dart';
+import '../../location/service/rider_location_permission_service.dart';
 import '../../notifications/controller/notification_controller.dart';
 import '../../orders/controller/delivery_controller.dart';
 import '../../orders/service/rider_api.dart';
@@ -21,6 +22,7 @@ class DashboardView extends StatefulWidget {
 }
 
 class _DashboardViewState extends State<DashboardView> {
+  final _locationPermissionService = RiderLocationPermissionService();
   bool isOnline = false;
   bool isLoading = false;
   double todayEarnings = 0;
@@ -121,6 +123,24 @@ class _DashboardViewState extends State<DashboardView> {
         ),
       );
       if (confirm != true) return;
+    }
+
+    if (value) {
+      if (!mounted) return;
+      final permissionGranted = await _locationPermissionService
+          .requestForGoingOnline(context);
+      if (!permissionGranted || !mounted) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Background location is required to go online and receive deliveries.',
+              ),
+            ),
+          );
+        }
+        return;
+      }
     }
 
     if (value && Get.isRegistered<RiderLocationController>()) {
