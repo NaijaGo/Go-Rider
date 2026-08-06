@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
 import '../../../core/storage/app_storage.dart';
+import '../../../core/push/onesignal_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../routes/app_routes.dart';
 
@@ -31,6 +32,7 @@ class _SplashViewState extends State<SplashView> {
       Get.offAllNamed(AppRoutes.pendingApproval);
     } else {
       Get.offAllNamed(AppRoutes.dashboard);
+      await OneSignalService.consumePendingDestination();
     }
   }
 

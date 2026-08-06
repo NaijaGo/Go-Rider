@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
+import 'package:get_storage/get_storage.dart';
 import 'package:onesignal_flutter/onesignal_flutter.dart';
 
 import '../../routes/app_routes.dart';
@@ -12,6 +13,9 @@ class OneSignalService {
 
   static bool _initialized = false;
   static bool _permissionRequested = false;
+  static final GetStorage _notificationStorage = GetStorage();
+  static const String _pendingDestinationKey =
+      'pending_notification_destination';
 
   static Future<void> initialize() async {
     if (_initialized) return;
@@ -28,7 +32,7 @@ class OneSignalService {
       OneSignal.Notifications.addClickListener((event) {
         final data = event.notification.additionalData ?? {};
         debugPrint('Rider notification clicked: $data');
-        _openNotificationDestination(data);
+        _queueOrOpenNotificationDestination(data);
       });
       _initialized = true;
     } catch (error) {
@@ -97,9 +101,45 @@ class OneSignalService {
     }
   }
 
+  static Future<void> consumePendingDestination() async {
+    final pending = _notificationStorage.read<dynamic>(_pendingDestinationKey);
+    if (pending is! Map) return;
+    await _notificationStorage.remove(_pendingDestinationKey);
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    _openNotificationDestination(Map<String, dynamic>.from(pending));
+  }
+
+  static void _queueOrOpenNotificationDestination(Map<String, dynamic> data) {
+    _notificationStorage.write(_pendingDestinationKey, data);
+    if (Get.context == null) return;
+    Future<void>.delayed(
+      const Duration(milliseconds: 250),
+      consumePendingDestination,
+    );
+  }
+
   static void _openNotificationDestination(Map<String, dynamic> data) {
     final type = data['type']?.toString() ?? '';
     final hasOrder = (data['orderId']?.toString() ?? '').isNotEmpty;
+    final arguments = <String, dynamic>{
+      if (hasOrder) 'orderId': data['orderId'].toString(),
+      if ((data['shipmentId']?.toString() ?? '').isNotEmpty)
+        'shipmentId': data['shipmentId'].toString(),
+    };
+
+    if (type == 'pickup_required' ||
+        type == 'arrived_at_vendor' ||
+        type == 'confirm_pickup') {
+      Get.toNamed(AppRoutes.confirmPickup, arguments: arguments);
+      return;
+    }
+
+    if (type == 'delivery_required' ||
+        type == 'arrived_at_customer' ||
+        type == 'confirm_delivery') {
+      Get.toNamed(AppRoutes.confirmDelivered, arguments: arguments);
+      return;
+    }
 
     if (type == 'rider_order_assigned' ||
         type == 'delivery_offer' ||
@@ -108,13 +148,20 @@ class OneSignalService {
         type == 'order_assigned'
             ? AppRoutes.activeDelivery
             : AppRoutes.assignedOrders,
-        arguments: hasOrder ? {'orderId': data['orderId']} : null,
+        arguments: arguments.isEmpty ? null : arguments,
       );
       return;
     }
 
+    if (type.contains('withdraw') ||
+        type.contains('earning') ||
+        type.contains('payout')) {
+      Get.toNamed(AppRoutes.earnings, arguments: arguments);
+      return;
+    }
+
     if (type.contains('delivery') || type.contains('order')) {
-      Get.toNamed(AppRoutes.activeDelivery);
+      Get.toNamed(AppRoutes.activeDelivery, arguments: arguments);
       return;
     }
 

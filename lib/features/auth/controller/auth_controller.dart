@@ -116,6 +116,7 @@ class AuthController extends GetxController {
 
       if (AppStorage.riderStatus == 'approved') {
         Get.offAllNamed(AppRoutes.dashboard);
+        await OneSignalService.consumePendingDestination();
       } else {
         Get.offAllNamed(AppRoutes.pendingApproval);
       }
