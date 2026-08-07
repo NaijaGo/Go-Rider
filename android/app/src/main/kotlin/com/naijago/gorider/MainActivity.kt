@@ -11,6 +11,11 @@ import android.os.Bundle
 import io.flutter.embedding.android.FlutterActivity
 
 class MainActivity : FlutterActivity() {
+    companion object {
+        private const val RIDER_JOBS_CHANNEL_ID = "naijago_rider_jobs_v1"
+        private const val RIDER_SOUND_RESOURCE = "rider_job_alert"
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         createUrgentNotificationChannels()
@@ -21,14 +26,23 @@ class MainActivity : FlutterActivity() {
 
         val notificationManager =
             getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+        val soundResourceId = resources.getIdentifier(
+            RIDER_SOUND_RESOURCE,
+            "raw",
+            packageName
+        )
+        val soundUri = if (soundResourceId != 0) {
+            android.net.Uri.parse("android.resource://$packageName/$soundResourceId")
+        } else {
+            RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+        }
         val audioAttributes = AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_NOTIFICATION)
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
             .build()
 
         listOf(
-            "ea2ee9a7-0988-429d-9e86-412d1668055e",
+            RIDER_JOBS_CHANNEL_ID,
             "naijago_urgent_alerts"
         ).forEach { channelId ->
             val channel = NotificationChannel(

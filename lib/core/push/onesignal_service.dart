@@ -8,7 +8,7 @@ import '../../routes/app_routes.dart';
 class OneSignalService {
   static const String _appId = String.fromEnvironment(
     'ONESIGNAL_APP_ID',
-    defaultValue: '76438b8d-4b39-49eb-805c-11eb934f5a66',
+    defaultValue: '',
   );
 
   static bool _initialized = false;
@@ -21,6 +21,12 @@ class OneSignalService {
     if (_initialized) return;
 
     try {
+      if (_appId.isEmpty) {
+        throw StateError(
+          'ONESIGNAL_APP_ID is required. Build with '
+          '--dart-define=ONESIGNAL_APP_ID=<rider-app-id>.',
+        );
+      }
       OneSignal.Debug.setLogLevel(
         kDebugMode ? OSLogLevel.warn : OSLogLevel.none,
       );
