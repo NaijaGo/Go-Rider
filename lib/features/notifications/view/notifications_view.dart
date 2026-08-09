@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/push/onesignal_service.dart';
 import '../../../core/widgets/app_background.dart';
 import '../../../core/widgets/section_card.dart';
 import '../controller/notification_controller.dart';
@@ -52,6 +53,7 @@ class NotificationsView extends StatelessWidget {
                   ],
                 ),
               ),
+              const _PushDiagnosticsCard(),
               Expanded(
                 child: Obx(() {
                   if (controller.isLoading.value) {
@@ -90,6 +92,77 @@ class NotificationsView extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PushDiagnosticsCard extends StatefulWidget {
+  const _PushDiagnosticsCard();
+
+  @override
+  State<_PushDiagnosticsCard> createState() => _PushDiagnosticsCardState();
+}
+
+class _PushDiagnosticsCardState extends State<_PushDiagnosticsCard> {
+  Map<String, Object?> _status = const {};
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+  }
+
+  Future<void> _refresh() async {
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    if (mounted) setState(() => _status = OneSignalService.diagnostics());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final connected =
+        _status['permission'] == true &&
+        _status['optedIn'] == true &&
+        (_status['subscriptionId']?.toString().isNotEmpty ?? false) &&
+        _status['tokenPresent'] == true;
+    final subscriptionId = _status['subscriptionId']?.toString() ?? 'waiting';
+    final shortId = subscriptionId.length > 12
+        ? '${subscriptionId.substring(0, 12)}...'
+        : subscriptionId;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+      child: SectionCard(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          children: [
+            Icon(
+              connected
+                  ? Icons.notifications_active
+                  : Icons.notification_important,
+              color: connected ? Colors.green : Colors.orange,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                connected
+                    ? 'Push connected | App ...${_status['appIdSuffix']} | $shortId'
+                    : 'Push not ready | permission=${_status['permission']} | '
+                          'optedIn=${_status['optedIn']} | subscription=$shortId',
+                style: const TextStyle(
+                  color: AppTheme.textDark,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Refresh push status',
+              onPressed: _refresh,
+              icon: const Icon(Icons.refresh),
+            ),
+          ],
         ),
       ),
     );

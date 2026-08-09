@@ -17,16 +17,22 @@ class OneSignalService {
   static const String _pendingDestinationKey =
       'pending_notification_destination';
 
+  static bool get isConfigured => _appId.isNotEmpty;
+
+  static String get appIdSuffix =>
+      _appId.length >= 6 ? _appId.substring(_appId.length - 6) : 'missing';
+
   static Future<void> initialize() async {
     if (_initialized) return;
 
+    if (!isConfigured) {
+      throw StateError(
+        'ONESIGNAL_APP_ID is required. Build with '
+        '--dart-define=ONESIGNAL_APP_ID=<rider-app-id>.',
+      );
+    }
+
     try {
-      if (_appId.isEmpty) {
-        throw StateError(
-          'ONESIGNAL_APP_ID is required. Build with '
-          '--dart-define=ONESIGNAL_APP_ID=<rider-app-id>.',
-        );
-      }
       OneSignal.Debug.setLogLevel(
         kDebugMode ? OSLogLevel.warn : OSLogLevel.none,
       );
@@ -44,6 +50,18 @@ class OneSignalService {
     } catch (error) {
       debugPrint('Unable to initialize OneSignal: $error');
     }
+  }
+
+  static Map<String, Object?> diagnostics() {
+    final subscription = OneSignal.User.pushSubscription;
+    return {
+      'configured': isConfigured,
+      'appIdSuffix': appIdSuffix,
+      'permission': OneSignal.Notifications.permission,
+      'optedIn': subscription.optedIn,
+      'subscriptionId': subscription.id,
+      'tokenPresent': (subscription.token ?? '').isNotEmpty,
+    };
   }
 
   static Future<void> requestPermission() async {
