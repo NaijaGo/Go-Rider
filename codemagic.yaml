@@ -7,6 +7,8 @@ workflows:
       flutter: stable
       vars:
         PACKAGE_NAME: "com.naijago.gorider"
+        API_BASE_URL: "https://naijago-backend.onrender.com"
+        ONESIGNAL_APP_ID: "d53ab8f7-7a3b-40e4-b3a3-025fa64004d1"
     cache:
       cache_paths:
         - ~/.pub-cache
@@ -41,20 +43,32 @@ workflows:
           } > "$CM_BUILD_DIR/android/key.properties"
       - name: Build Android artifacts
         script: |
-          flutter build apk --release
-          flutter build appbundle --release
+          flutter build apk --release \
+            --dart-define=API_BASE_URL="$API_BASE_URL" \
+            --dart-define=ONESIGNAL_APP_ID="$ONESIGNAL_APP_ID"
+          flutter build appbundle --release \
+            --dart-define=API_BASE_URL="$API_BASE_URL" \
+            --dart-define=ONESIGNAL_APP_ID="$ONESIGNAL_APP_ID"
     artifacts:
       - build/app/outputs/flutter-apk/*.apk
       - build/app/outputs/bundle/release/*.aab
 
-  ios-no-codesign:
-    name: iOS No Codesign
+  ios-release:
+    name: iOS App Store Release
     max_build_duration: 60
     instance_type: mac_mini_m2
     environment:
       flutter: stable
       xcode: latest
       cocoapods: default
+      vars:
+        API_BASE_URL: "https://naijago-backend.onrender.com"
+        ONESIGNAL_APP_ID: "d53ab8f7-7a3b-40e4-b3a3-025fa64004d1"
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.naijago.gorider
+    integrations:
+      app_store_connect: naijago_mainapp_key
     cache:
       cache_paths:
         - ~/.pub-cache
@@ -67,14 +81,24 @@ workflows:
         script: |
           cd ios
           pod install
+      - name: Configure App Store signing
+        script: |
+          xcode-project use-profiles
       - name: Analyze
         script: |
           flutter analyze
       - name: Run tests
         script: |
           flutter test
-      - name: Build iOS without codesigning
+      - name: Build signed IPA
         script: |
-          flutter build ios --release --no-codesign
+          flutter build ipa --release --export-method app-store \
+            --dart-define=API_BASE_URL="$API_BASE_URL" \
+            --dart-define=ONESIGNAL_APP_ID="$ONESIGNAL_APP_ID"
     artifacts:
-      - build/ios/iphoneos/*.app
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
