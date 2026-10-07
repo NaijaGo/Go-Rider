@@ -117,6 +117,77 @@ class _ActiveDeliveryViewState extends State<ActiveDeliveryView> {
                       ),
                     ),
 
+                    if (controller.pickupStops.length > 1) ...[
+                      const SizedBox(height: 22),
+                      const Text(
+                        'Pickup Stops',
+                        style: TextStyle(
+                          color: AppTheme.textDark,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      SectionCard(
+                        child: Column(
+                          children: controller.pickupStops.asMap().entries.map((entry) {
+                            final index = entry.key;
+                            final stop = entry.value;
+                            final isCurrent = index == controller.currentPickupIndex.value;
+                            final isCompleted = index < controller.currentPickupIndex.value;
+                            return Column(
+                              children: [
+                                ListTile(
+                                  contentPadding: EdgeInsets.zero,
+                                  leading: CircleAvatar(
+                                    backgroundColor: isCompleted
+                                        ? AppTheme.green.withValues(alpha: 0.14)
+                                        : isCurrent
+                                            ? AppTheme.secondary.withValues(alpha: 0.14)
+                                            : AppTheme.textMuted.withValues(alpha: 0.10),
+                                    child: Text(
+                                      '${index + 1}',
+                                      style: TextStyle(
+                                        color: isCompleted
+                                            ? AppTheme.green
+                                            : isCurrent
+                                                ? AppTheme.secondary
+                                                : AppTheme.textMuted,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ),
+                                  title: Text(
+                                    stop.sellerName,
+                                    style: const TextStyle(
+                                      color: AppTheme.textDark,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                  subtitle: Text(
+                                    stop.address,
+                                    style: const TextStyle(color: AppTheme.textMuted),
+                                  ),
+                                  trailing: isCompleted
+                                      ? const Icon(Icons.check_circle, color: AppTheme.green)
+                                      : isCurrent
+                                          ? const Icon(Icons.navigation, color: AppTheme.secondary)
+                                          : null,
+                                ),
+                                if (index < controller.pickupStops.length - 1)
+                                  const Divider(height: 8),
+                              ],
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Pickup verification remains one order-level code after you collect all listed shipments.',
+                        style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
+                      ),
+                    ],
+
                     const SizedBox(height: 18),
 
                     SectionCard(
@@ -213,7 +284,9 @@ class _ActiveDeliveryViewState extends State<ActiveDeliveryView> {
                           ? controller.markArrivedAtVendor
                           : null,
                       icon: const Icon(Icons.storefront),
-                      label: const Text('Mark Arrived at Vendor'),
+                      label: Text(controller.pickupStops.length > 1
+                          ? 'Mark Arrived at Pickup ${controller.currentPickupIndex.value + 1}'
+                          : 'Mark Arrived at Vendor'),
                     ),
 
                     const SizedBox(height: 12),
@@ -223,7 +296,9 @@ class _ActiveDeliveryViewState extends State<ActiveDeliveryView> {
                       icon: const Icon(Icons.map_outlined),
                       label: Text(
                         controller.isGoingToVendor
-                            ? 'Follow Map to Vendor'
+                            ? controller.pickupStops.length > 1
+                                ? 'Follow Map to Pickup ${controller.currentPickupIndex.value + 1}'
+                                : 'Follow Map to Vendor'
                             : controller.isGoingToCustomer
                             ? 'Follow Map to Customer'
                             : 'View Delivery Map',
@@ -233,12 +308,26 @@ class _ActiveDeliveryViewState extends State<ActiveDeliveryView> {
                     const SizedBox(height: 12),
 
                     OutlinedButton.icon(
-                      onPressed: controller.hasArrivedAtVendor
+                      onPressed: controller.hasArrivedAtVendor &&
+                              !controller.hasNextPickupStop
                           ? () => Get.toNamed(AppRoutes.confirmPickup)
                           : null,
                       icon: const Icon(Icons.inventory_2_outlined),
                       label: const Text('Confirm Pickup'),
                     ),
+
+                    if (controller.hasNextPickupStop) ...[
+                      const SizedBox(height: 12),
+                      ElevatedButton.icon(
+                        onPressed: controller.hasArrivedAtVendor
+                            ? controller.advanceToNextPickupStop
+                            : null,
+                        icon: const Icon(Icons.arrow_forward),
+                        label: Text(
+                          'Continue to Pickup ${controller.currentPickupIndex.value + 2}',
+                        ),
+                      ),
+                    ],
 
                     const SizedBox(height: 12),
 

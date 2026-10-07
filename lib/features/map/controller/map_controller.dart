@@ -43,10 +43,14 @@ class RiderMapController extends GetxController {
 
   void syncDelivery(DeliveryController deliveryController) {
     _activeOrderId = deliveryController.activeOrder.value?.id;
+    final previousVendorLocation = vendorLocation.value;
     vendorLocation.value = deliveryController.vendorLocation.value;
     customerLocation.value = deliveryController.customerLocation.value;
 
-    if (routePoints.isEmpty) {
+    if (routePoints.isEmpty ||
+        deliveryController.hasPickedUp ||
+        previousVendorLocation.latitude != vendorLocation.value.latitude ||
+        previousVendorLocation.longitude != vendorLocation.value.longitude) {
       refreshRoute();
     }
   }

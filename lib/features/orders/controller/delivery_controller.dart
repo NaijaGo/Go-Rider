@@ -23,6 +23,7 @@ class DeliveryController extends GetxController {
   final activeOrder = Rxn<RiderOrder>();
   final isLoadingActiveDelivery = false.obs;
   final activeDeliveryError = ''.obs;
+  final currentPickupIndex = 0.obs;
 
   final riderLocation = const LatLng(0, 0).obs;
   final vendorLocation = const LatLng(0, 0).obs;
@@ -67,15 +68,28 @@ class DeliveryController extends GetxController {
   }
 
   void setActiveOrder(RiderOrder order) {
+    final isSameOrder = activeOrder.value?.id == order.id;
+    final previousStage = stage.value;
     activeOrder.value = order.copyWith(status: RiderOrderStatus.accepted);
-
-    vendorLocation.value = order.vendorLocation;
+    if (!isSameOrder) {
+      currentPickupIndex.value = 0;
+    } else if (pickupStops.isNotEmpty) {
+      currentPickupIndex.value = currentPickupIndex.value
+          .clamp(0, pickupStops.length - 1)
+          .toInt();
+    }
+    final firstStop = order.pickupStops.isNotEmpty ? order.pickupStops.first : null;
+    final selectedStop = currentPickupStop ?? firstStop;
+    vendorLocation.value = selectedStop?.location ?? order.vendorLocation;
     customerLocation.value = order.customerLocation;
 
-    vendorAddress.value = order.vendorAddress;
+    vendorAddress.value = selectedStop?.address ?? order.vendorAddress;
     customerAddress.value = order.customerAddress;
 
-    stage.value = DeliveryStage.goingToVendor;
+    stage.value = isSameOrder ? previousStage : DeliveryStage.goingToVendor;
+    if (Get.isRegistered<RiderMapController>()) {
+      Get.find<RiderMapController>().syncDelivery(this);
+    }
   }
 
   void clearActiveOrder() {
@@ -85,7 +99,9 @@ class DeliveryController extends GetxController {
 
   String get orderCode => activeOrder.value?.orderCode ?? 'No active order';
 
-  String get vendorName => activeOrder.value?.vendorName ?? 'Not available';
+  String get vendorName => currentPickupStop?.sellerName ??
+      activeOrder.value?.vendorName ??
+      'Not available';
 
   String get customerName => activeOrder.value?.customerName ?? 'Not available';
 
@@ -93,6 +109,16 @@ class DeliveryController extends GetxController {
       activeOrder.value?.customerPhone ?? 'Not available';
 
   String get goodsType => activeOrder.value?.goodsType ?? 'Not available';
+
+  List<RiderPickupStop> get pickupStops =>
+      activeOrder.value?.pickupStops ?? const <RiderPickupStop>[];
+
+  RiderPickupStop? get currentPickupStop =>
+      pickupStops.isEmpty || currentPickupIndex.value >= pickupStops.length
+          ? null
+          : pickupStops[currentPickupIndex.value];
+
+  bool get hasNextPickupStop => currentPickupIndex.value + 1 < pickupStops.length;
 
   String get deliveryFeeText {
     final fee = activeOrder.value?.deliveryFee ?? 0;
@@ -160,8 +186,27 @@ class DeliveryController extends GetxController {
     stage.value = DeliveryStage.arrivedAtVendor;
   }
 
+  void advanceToNextPickupStop() {
+    if (!hasArrivedAtVendor || !hasNextPickupStop) return;
+
+    currentPickupIndex.value++;
+    final nextStop = currentPickupStop;
+    if (nextStop == null) return;
+
+    vendorLocation.value = nextStop.location;
+    vendorAddress.value = nextStop.address;
+    stage.value = DeliveryStage.goingToVendor;
+
+    if (Get.isRegistered<RiderMapController>()) {
+      Get.find<RiderMapController>().syncDelivery(this);
+    }
+  }
+
   void markPickedUp() {
     stage.value = DeliveryStage.goingToCustomer;
+    if (Get.isRegistered<RiderMapController>()) {
+      Get.find<RiderMapController>().syncDelivery(this);
+    }
   }
 
   Future<bool> confirmPickup(String otp) async {

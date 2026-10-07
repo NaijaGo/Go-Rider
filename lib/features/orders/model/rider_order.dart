@@ -13,6 +13,49 @@ enum RiderOrderStatus {
   cancelled,
 }
 
+class RiderPickupStop {
+  final String shipmentId;
+  final int sequence;
+  final String sellerName;
+  final String address;
+  final LatLng location;
+
+  const RiderPickupStop({
+    required this.shipmentId,
+    required this.sequence,
+    required this.sellerName,
+    required this.address,
+    required this.location,
+  });
+
+  factory RiderPickupStop.fromBackend(dynamic source, {int fallbackSequence = 1}) {
+    final json = asMap(source);
+    final location = asMap(json['vendorLocation']);
+    return RiderPickupStop(
+      shipmentId: asString(json['shipment'] ?? json['_id']),
+      sequence: asDouble(json['sequence'], fallbackSequence.toDouble())
+          .toInt()
+          .clamp(1, 999)
+          .toInt(),
+      sellerName: asString(
+        json['sellerName'] ?? asMap(json['vendor'])['businessName'],
+        'Vendor',
+      ),
+      address: asString(
+        json['formattedAddress'] ??
+            location['formattedAddress'] ??
+            location['address'] ??
+            location['addressLine'],
+        'Vendor address unavailable',
+      ),
+      location: LatLng(
+        asDouble(json['latitude'] ?? location['latitude'] ?? location['lat']),
+        asDouble(json['longitude'] ?? location['longitude'] ?? location['lng']),
+      ),
+    );
+  }
+}
+
 class RiderOrder {
   final String id;
   final String orderCode;
@@ -27,6 +70,7 @@ class RiderOrder {
   final double riderRatePerKm;
   final LatLng vendorLocation;
   final LatLng customerLocation;
+  final List<RiderPickupStop> pickupStops;
   final RiderOrderStatus status;
 
   const RiderOrder({
@@ -43,6 +87,7 @@ class RiderOrder {
     this.riderRatePerKm = 0,
     required this.vendorLocation,
     required this.customerLocation,
+    this.pickupStops = const [],
     required this.status,
   });
 
@@ -54,7 +99,39 @@ class RiderOrder {
     final user = asMap(json['user']);
     final shippingAddress = json['shippingAddress'];
     final shipmentVendorLocation = asMap(firstShipment['vendorLocation']);
-    final vendorLocation = _locationFromVendor(vendor, shipmentVendorLocation);
+    final serializedPickupStops = asList(json['pickupSequence']);
+    final pickupStops = serializedPickupStops.isNotEmpty
+        ? serializedPickupStops
+              .asMap()
+              .entries
+              .map((entry) => RiderPickupStop.fromBackend(
+                    entry.value,
+                    fallbackSequence: entry.key + 1,
+                  ))
+              .toList()
+        : shipments
+              .where((item) {
+                final shipment = asMap(item);
+                final status = asString(shipment['shipmentStatus']).toLowerCase();
+                return asString(shipment['fulfillmentMethod'], 'delivery').toLowerCase() != 'pickup' &&
+                    !{'rejected', 'cancelled', 'returned'}.contains(status);
+              })
+              .toList()
+              .asMap()
+              .entries
+              .map((entry) => RiderPickupStop.fromBackend(
+                    {
+                      ...asMap(entry.value),
+                      'sellerName': asMap(entry.value)['sellerName'] ??
+                          asMap(asMap(entry.value)['vendor'])['businessName'],
+                      'sequence': entry.key + 1,
+                    },
+                    fallbackSequence: entry.key + 1,
+                  ))
+              .toList();
+    final firstPickupStop = pickupStops.isNotEmpty ? pickupStops.first : null;
+    final vendorLocation = firstPickupStop?.location ??
+        _locationFromVendor(vendor, shipmentVendorLocation);
     final customerLocation = _locationFromOrder(json);
     final payoutBreakdown = asMap(json['riderPayoutBreakdown']);
 
@@ -62,11 +139,12 @@ class RiderOrder {
       id: asString(json['_id'] ?? json['id']),
       orderCode:
           '#NGO-${asString(json['_id'] ?? json['id']).substring(0, asString(json['_id'] ?? json['id']).length < 6 ? asString(json['_id'] ?? json['id']).length : 6).toUpperCase()}',
-      vendorName: asString(
+      vendorName: firstPickupStop?.sellerName ?? asString(
         vendor['businessName'] ?? vendor['storeName'] ?? vendor['fullName'],
         'Vendor',
       ),
-      vendorAddress: _addressFromVendor(vendor, shipmentVendorLocation),
+      vendorAddress: firstPickupStop?.address ??
+          _addressFromVendor(vendor, shipmentVendorLocation),
       customerName:
           [
             asString(user['firstName']),
@@ -97,6 +175,7 @@ class RiderOrder {
       ),
       vendorLocation: vendorLocation,
       customerLocation: customerLocation,
+      pickupStops: pickupStops,
       status: _statusFromBackend(
         asString(json['shipmentStatus'] ?? json['mainOrderStatus']),
       ),
@@ -117,6 +196,7 @@ class RiderOrder {
     double? riderRatePerKm,
     LatLng? vendorLocation,
     LatLng? customerLocation,
+    List<RiderPickupStop>? pickupStops,
     RiderOrderStatus? status,
   }) {
     return RiderOrder(
@@ -133,6 +213,7 @@ class RiderOrder {
       riderRatePerKm: riderRatePerKm ?? this.riderRatePerKm,
       vendorLocation: vendorLocation ?? this.vendorLocation,
       customerLocation: customerLocation ?? this.customerLocation,
+      pickupStops: pickupStops ?? this.pickupStops,
       status: status ?? this.status,
     );
   }
