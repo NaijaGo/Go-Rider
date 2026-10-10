@@ -20,6 +20,8 @@ class AuthApi {
   }
 
   static Future<dynamic> register({
+    String? googleIdToken,
+    bool acceptedTerms = false,
     required String fullName,
     required String phone,
     required String email,
@@ -55,6 +57,8 @@ class AuthApi {
     );
 
     return RiderApi.register(
+      googleIdToken: googleIdToken,
+      acceptedTerms: acceptedTerms,
       fullName: fullName,
       phoneNumber: phone,
       email: email,

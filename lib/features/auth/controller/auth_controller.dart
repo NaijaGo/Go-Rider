@@ -12,6 +12,8 @@ import '../../../features/orders/controller/orders_controller.dart';
 import '../../../features/profile/controller/rider_profile_controller.dart';
 import '../../../routes/app_routes.dart';
 import '../service/auth_api.dart';
+import '../view/google_login_view.dart';
+import '../../../core/auth/google_auth_service.dart';
 
 class AuthController extends GetxController {
   final emailOrPhoneController = TextEditingController();
@@ -61,6 +63,8 @@ class AuthController extends GetxController {
   final acceptedTerms = false.obs;
 
   final _imagePicker = ImagePicker();
+  String? _googleIdToken;
+  bool get isGoogleSignup => _googleIdToken != null;
 
   Future<void> pickRegistrationDocument(Rx<XFile?> target) async {
     final image = await _imagePicker.pickImage(
@@ -92,36 +96,71 @@ class AuthController extends GetxController {
         ),
       );
 
-      final riderId = asString(data['_id']);
-      final status = asString(data['status'], 'pending');
-      final email = asString(data['email'], emailOrPhone);
-      final vehicleType = asString(data['vehicleType']);
-
-      await AppStorage.saveToken(asString(data['token']));
-      await AppStorage.saveRiderStatus(status);
-      await AppStorage.saveRiderIdentity(
-        name: asString(data['fullName'], 'NaijaGo Rider'),
-        email: email,
-      );
-      await OneSignalService.loginRider(
-        riderId: riderId,
-        email: email,
-        status: status,
-        vehicleType: vehicleType,
-      );
-      if (Get.isRegistered<NotificationController>()) {
-        await Get.find<NotificationController>().startAfterLogin();
-      }
-      _refreshProtectedControllers();
-
-      if (AppStorage.riderStatus == 'approved') {
-        Get.offAllNamed(AppRoutes.dashboard);
-        await OneSignalService.consumePendingDestination();
-      } else {
-        Get.offAllNamed(AppRoutes.pendingApproval);
-      }
+      await _acceptSession(data);
     } catch (e) {
       Get.snackbar('Error', apiMessage(e, 'Login failed'));
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  Future<void> _acceptSession(Map<String, dynamic> data) async {
+    if (asString(data['token']).isEmpty || asString(data['_id']).isEmpty) {
+      throw const FormatException('Invalid sign-in response');
+    }
+    final riderId = asString(data['_id']);
+    final status = asString(data['status'], 'pending');
+    final email = asString(data['email'], emailOrPhoneController.text.trim());
+    final vehicleType = asString(data['vehicleType']);
+
+    await AppStorage.saveToken(asString(data['token']));
+    await AppStorage.saveRiderStatus(status);
+    await AppStorage.saveRiderIdentity(
+      name: asString(data['fullName'], 'NaijaGo Rider'),
+      email: email,
+    );
+    await OneSignalService.loginRider(
+      riderId: riderId,
+      email: email,
+      status: status,
+      vehicleType: vehicleType,
+    );
+    if (Get.isRegistered<NotificationController>()) {
+      await Get.find<NotificationController>().startAfterLogin();
+    }
+    _refreshProtectedControllers();
+
+    if (AppStorage.riderStatus == 'approved') {
+      Get.offAllNamed(AppRoutes.dashboard);
+      await OneSignalService.consumePendingDestination();
+    } else {
+      Get.offAllNamed(AppRoutes.pendingApproval);
+    }
+  }
+
+  Future<void> googleLogin() async {
+    if (isLoading.value) return;
+    isLoading.value = true;
+    try {
+      final result = await Get.to<Map<String, dynamic>>(
+        () => const GoogleLoginView(),
+      );
+      if (result == null) return;
+      if (result['code'] == 'GOOGLE_RIDER_ONBOARDING_REQUIRED') {
+        resetRegistrationForm();
+        _googleIdToken = result['googleIdToken'] as String;
+        final profile = asMap(result['profile']);
+        emailController.text = asString(profile['email']);
+        fullNameController.text = asString(profile['fullName']);
+        Get.toNamed(AppRoutes.register);
+      } else {
+        await _acceptSession(result);
+      }
+    } catch (_) {
+      Get.snackbar(
+        'Google sign-in',
+        'Unable to sign in right now. Please try again.',
+      );
     } finally {
       isLoading.value = false;
     }
@@ -153,8 +192,9 @@ class AuthController extends GetxController {
   }
 
   Future<void> register() async {
-    if (registerPasswordController.text.trim() !=
-        confirmPasswordController.text.trim()) {
+    if (!isGoogleSignup &&
+        registerPasswordController.text.trim() !=
+            confirmPasswordController.text.trim()) {
       Get.snackbar('Error', 'Passwords do not match');
       return;
     }
@@ -175,33 +215,62 @@ class AuthController extends GetxController {
     try {
       isLoading.value = true;
 
-      await AuthApi.register(
-        fullName: fullNameController.text.trim(),
-        phone: phoneController.text.trim(),
-        email: emailController.text.trim(),
-        password: registerPasswordController.text.trim(),
-        dateOfBirth: dateOfBirthController.text.trim(),
-        gender: genderController.text.trim(),
-        homeAddress: homeAddressController.text.trim(),
-        state: stateController.text.trim(),
-        city: cityController.text.trim(),
-        deliveryZone: deliveryZoneController.text.trim(),
-        vehicleType: vehicleTypeController.text.trim(),
-        vehicleModel: vehicleModelController.text.trim(),
-        plateNumber: plateNumberController.text.trim(),
-        licenseNumber: licenseNumberController.text.trim(),
-        idType: idTypeController.text.trim(),
-        idNumber: idNumberController.text.trim(),
-        bankName: bankNameController.text.trim(),
-        accountNumber: accountNumberController.text.trim(),
-        accountName: accountNameController.text.trim(),
-        emergencyName: emergencyNameController.text.trim(),
-        emergencyPhone: emergencyPhoneController.text.trim(),
-        emergencyRelationship: emergencyRelationshipController.text.trim(),
-        ninFront: ninFront.value!,
-        ninBack: ninBack.value!,
-        platePhoto: platePhoto.value!,
-        selfie: selfie.value!,
+      if (isGoogleSignup) {
+        // Onboarding can take longer than the Google token lifetime. Obtain a fresh
+        // token before uploading documents, and never silently switch identities.
+        final account = await GoogleAuthService.authenticate();
+        if (account == null) return;
+        if (account.email.toLowerCase() !=
+            emailController.text.trim().toLowerCase()) {
+          Get.snackbar(
+            'Google sign-in',
+            'Select the same Google account used to start registration.',
+          );
+          return;
+        }
+        _googleIdToken = account.authentication.idToken;
+        if (_googleIdToken == null) {
+          throw const GoogleAuthUnavailable(
+            'Please sign in with Google again.',
+          );
+        }
+      }
+      final registration = asMap(
+        await AuthApi.register(
+          googleIdToken: _googleIdToken,
+          acceptedTerms: acceptedTerms.value,
+          fullName: fullNameController.text.trim(),
+          phone: phoneController.text.trim(),
+          email: emailController.text.trim(),
+          password: registerPasswordController.text.trim(),
+          dateOfBirth: dateOfBirthController.text.trim(),
+          gender: genderController.text.trim(),
+          homeAddress: homeAddressController.text.trim(),
+          state: stateController.text.trim(),
+          city: cityController.text.trim(),
+          deliveryZone: deliveryZoneController.text.trim(),
+          vehicleType: vehicleTypeController.text.trim(),
+          vehicleModel: vehicleModelController.text.trim(),
+          plateNumber: plateNumberController.text.trim(),
+          licenseNumber: licenseNumberController.text.trim(),
+          idType: idTypeController.text.trim(),
+          idNumber: idNumberController.text.trim(),
+          bankName: bankNameController.text.trim(),
+          accountNumber: accountNumberController.text.trim(),
+          accountName: accountNameController.text.trim(),
+          emergencyName: emergencyNameController.text.trim(),
+          emergencyPhone: emergencyPhoneController.text.trim(),
+          emergencyRelationship: emergencyRelationshipController.text.trim(),
+          ninFront: ninFront.value!,
+          ninBack: ninBack.value!,
+          platePhoto: platePhoto.value!,
+          selfie: selfie.value!,
+        ),
+      );
+      _googleIdToken = null;
+      Get.snackbar(
+        'Registration submitted',
+        asString(registration['message'], 'Please wait for Admin approval.'),
       );
 
       Get.offAllNamed(AppRoutes.pendingApproval);
@@ -216,13 +285,16 @@ class AuthController extends GetxController {
     if (Get.isRegistered<NotificationController>()) {
       Get.find<NotificationController>().stopLiveNotifications();
     }
+    await GoogleAuthService.signOut();
     await OneSignalService.logout();
     await AppStorage.clear();
     resetLoginForm();
+    resetRegistrationForm();
     Get.offAllNamed(AppRoutes.login);
   }
 
   void resetRegistrationForm() {
+    _googleIdToken = null;
     fullNameController.clear();
     phoneController.clear();
     emailController.clear();

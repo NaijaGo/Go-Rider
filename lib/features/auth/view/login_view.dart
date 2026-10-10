@@ -82,6 +82,15 @@ class LoginView extends StatelessWidget {
                       ),
                       const SizedBox(height: 22),
                       Obx(
+                        () => OutlinedButton(
+                          onPressed: controller.isLoading.value
+                              ? null
+                              : controller.googleLogin,
+                          child: const Text('Continue with Google'),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Obx(
                         () => ElevatedButton(
                           onPressed: controller.isLoading.value
                               ? null
@@ -99,7 +108,10 @@ class LoginView extends StatelessWidget {
                 const SizedBox(height: 20),
                 Center(
                   child: TextButton(
-                    onPressed: () => Get.toNamed(AppRoutes.register),
+                    onPressed: () {
+                      controller.resetRegistrationForm();
+                      Get.toNamed(AppRoutes.register);
+                    },
                     child: const Text(
                       'Create rider account',
                       style: TextStyle(

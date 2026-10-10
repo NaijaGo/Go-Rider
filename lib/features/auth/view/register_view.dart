@@ -31,7 +31,10 @@ class RegisterView extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 IconButton(
-                  onPressed: Get.back,
+                  onPressed: () {
+                    controller.resetRegistrationForm();
+                    Get.back();
+                  },
                   icon: const Icon(Icons.arrow_back),
                 ),
                 const SizedBox(height: 8),
@@ -67,6 +70,7 @@ class RegisterView extends StatelessWidget {
                       _field(
                         controller: controller.emailController,
                         label: 'Email',
+                        readOnly: controller.isGoogleSignup,
                         icon: Icons.email_outlined,
                         keyboardType: TextInputType.emailAddress,
                       ),
@@ -95,33 +99,34 @@ class RegisterView extends StatelessWidget {
 
                 const SizedBox(height: 22),
 
-                const _SectionTitle(
-                  title: 'Account Security',
-                  subtitle: 'Create login password for the rider account.',
-                ),
-                SectionCard(
-                  padding: cardPadding,
-                  child: Column(
-                    children: [
-                      _field(
-                        controller: controller.registerPasswordController,
-                        label: 'Password',
-                        icon: Icons.lock_outline,
-                        obscureText: true,
-                      ),
-                      _gap(),
-                      _field(
-                        controller: controller.confirmPasswordController,
-                        label: 'Confirm Password',
-                        icon: Icons.lock_reset_outlined,
-                        obscureText: true,
-                      ),
-                    ],
+                if (!controller.isGoogleSignup) ...[
+                  const _SectionTitle(
+                    title: 'Account Security',
+                    subtitle: 'Create login password for the rider account.',
                   ),
-                ),
+                  SectionCard(
+                    padding: cardPadding,
+                    child: Column(
+                      children: [
+                        _field(
+                          controller: controller.registerPasswordController,
+                          label: 'Password',
+                          icon: Icons.lock_outline,
+                          obscureText: true,
+                        ),
+                        _gap(),
+                        _field(
+                          controller: controller.confirmPasswordController,
+                          label: 'Confirm Password',
+                          icon: Icons.lock_reset_outlined,
+                          obscureText: true,
+                        ),
+                      ],
+                    ),
+                  ),
 
-                const SizedBox(height: 22),
-
+                  const SizedBox(height: 22),
+                ],
                 const _SectionTitle(
                   title: 'Operation Information',
                   subtitle: 'Where and how the rider will operate.',
@@ -367,11 +372,13 @@ class RegisterView extends StatelessWidget {
     required IconData icon,
     TextInputType? keyboardType,
     bool obscureText = false,
+    bool readOnly = false,
     int maxLines = 1,
     TextCapitalization capitalization = TextCapitalization.none,
   }) {
     return TextField(
       controller: controller,
+      readOnly: readOnly,
       keyboardType: keyboardType,
       obscureText: obscureText,
       maxLines: obscureText ? 1 : maxLines,

@@ -7,6 +7,27 @@ import '../../../core/api/api_helpers.dart';
 import '../../../core/api/api_paths.dart';
 
 class RiderApi {
+  static Future<Map<String, dynamic>> googleLogin(
+    String idToken, {
+    String? linkPassword,
+    String? oneSignalPlayerId,
+  }) async {
+    final response = await ApiClient.dio.post(
+      '/riders/google',
+      options: Options(
+        extra: {'skipAuth': true},
+        validateStatus: (status) => status != null && status < 600,
+      ),
+      data: {
+        'idToken': idToken,
+        if (linkPassword != null) 'linkPassword': linkPassword,
+        if (oneSignalPlayerId != null) 'oneSignalPlayerId': oneSignalPlayerId,
+      },
+    );
+    final data = asMap(response.data);
+    return {...data, 'httpStatus': response.statusCode};
+  }
+
   static Future<Map<String, dynamic>> login({
     required String email,
     required String password,
@@ -64,6 +85,8 @@ class RiderApi {
   }
 
   static Future<Map<String, dynamic>> register({
+    String? googleIdToken,
+    bool acceptedTerms = false,
     required String fullName,
     required String phoneNumber,
     required String email,
@@ -92,6 +115,8 @@ class RiderApi {
       ApiPaths.register,
       options: Options(extra: {'skipAuth': true}),
       data: {
+        if (googleIdToken != null) 'googleIdToken': googleIdToken,
+        if (googleIdToken != null) 'acceptedTerms': acceptedTerms,
         'fullName': fullName,
         'phoneNumber': phoneNumber,
         'email': email,
