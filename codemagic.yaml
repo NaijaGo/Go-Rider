@@ -5,6 +5,8 @@ workflows:
     instance_type: mac_mini_m2
     environment:
       flutter: stable
+      groups:
+        - rider_signing
       vars:
         GOOGLE_SERVER_CLIENT_ID: "878060644963-ujmbu0ka7g3rh07muknotij2lbsaq4oh.apps.googleusercontent.com"
         GOOGLE_IOS_CLIENT_ID: "878060644963-pfh25sa295qbh5fqqbhecegnpnclsc95.apps.googleusercontent.com"
