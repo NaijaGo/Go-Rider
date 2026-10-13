@@ -1,4 +1,5 @@
-platform :ios, '13.0'
+# Flutter stable requires iOS 15; keep Xcode and AppFrameworkInfo.plist aligned.
+platform :ios, '15.0'
 
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
 

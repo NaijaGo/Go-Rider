@@ -3,6 +3,29 @@ import 'package:flutter_test/flutter_test.dart';
 import '../tool/configure_google_sign_in.dart';
 
 void main() {
+  test('CocoaPods minimum supports the current Flutter iOS engine', () {
+    final podfile = File('ios/Podfile').readAsStringSync();
+    expect(podfile, contains("platform :ios, '15.0'"));
+    expect(podfile, isNot(contains("platform :ios, '13.0'")));
+  });
+  test('all Xcode deployment settings match the CocoaPods iOS minimum', () {
+    final project = File(
+      'ios/Runner.xcodeproj/project.pbxproj',
+    ).readAsStringSync();
+    final targets = RegExp(
+      r'IPHONEOS_DEPLOYMENT_TARGET\s*=\s*([^;]+);',
+    ).allMatches(project).map((match) => match.group(1)!.trim()).toList();
+    expect(targets.length, 3);
+    expect(targets, everyElement('15.0'));
+  });
+  test('Flutter app framework declares the matching minimum iOS version', () {
+    final plist = File('ios/Flutter/AppFrameworkInfo.plist').readAsStringSync();
+    final minimum = RegExp(
+      r'<key>MinimumOSVersion</key>\s*<string>([^<]+)</string>',
+    ).firstMatch(plist);
+    expect(minimum, isNotNull);
+    expect(minimum!.group(1), '15.0');
+  });
   test('combined default workflow prepares both signed platforms', () {
     final config = File('codemagic.yaml').readAsStringSync();
     final combined = config.split('  default-workflow:').last;
