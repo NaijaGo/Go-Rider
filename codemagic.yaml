@@ -126,6 +126,10 @@ workflows:
         script: |
           set -euo pipefail
           dart run tool/configure_google_sign_in.dart
+      - name: Validate opaque iOS app icons
+        script: |
+          set -euo pipefail
+          dart run tool/validate_ios_app_icons.dart
       - name: Install pods
         script: |
           set -euo pipefail
@@ -213,6 +217,10 @@ workflows:
           cd "$CM_BUILD_DIR"
           flutter pub get
           dart run tool/configure_google_sign_in.dart
+      - name: Validate opaque iOS app icons
+        script: |
+          set -euo pipefail
+          dart run tool/validate_ios_app_icons.dart
       - name: Analyze and run local tests
         script: |
           set -euo pipefail
