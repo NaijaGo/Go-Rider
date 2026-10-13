@@ -46,7 +46,7 @@ class RiderAlerts {
       AppStorage.riderStatus == 'approved';
   static bool get canNavigate =>
       (!Get.isRegistered<RiderAgreementController>() ||
-          Get.find<RiderAgreementController>().confirmed.value) &&
+          Get.find<RiderAgreementController>().accessConfirmed) &&
       sessionReady &&
       Get.context != null &&
       !{

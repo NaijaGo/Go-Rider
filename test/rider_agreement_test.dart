@@ -42,10 +42,211 @@ DioException failure(int code, {String? reason}) => DioException(
     data: {'code': reason},
   ),
 );
+Map<String, dynamic> pausedStatus({String riderStatus = 'approved'}) => {
+  'success': true,
+  'enforcementEnabled': false,
+  'enforcementPaused': true,
+  'accepted': false,
+  'requiresAcceptance': false,
+  'workAllowed': riderStatus == 'approved',
+  'riderStatus': riderStatus,
+  'agreement': null,
+  'acceptance': null,
+  'requiredVersion': null,
+  'acceptedVersion': null,
+  'acceptedAt': null,
+};
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => Get.testMode = true);
   tearDown(() => Get.reset());
+  test(
+    'verified server pause permits continuation without recording acceptance or POST',
+    () async {
+      var posts = 0, continued = 0;
+      final c = RiderAgreementController(
+        hasSession: () => true,
+        fetchCurrent: () async => pausedStatus(),
+        fetchStatus: () async => pausedStatus(),
+        saveAcceptance: (_) async {
+          posts++;
+          return {};
+        },
+        onAccepted: () => continued++,
+      );
+      await c.load();
+      expect(c.paused.value, true);
+      expect(c.accessConfirmed, true);
+      expect(c.confirmed.value, false);
+      expect(c.agreement.value, null);
+      c.consent.value = true;
+      expect(c.canSubmit, false);
+      await c.accept();
+      c.continueIfAccepted();
+      expect(continued, 1);
+      expect(posts, 0);
+      expect(await c.ensureAccepted(navigate: false), true);
+      expect(c.confirmed.value, false);
+    },
+  );
+  test(
+    'malformed pause responses fail closed, including missing fields and restricted accounts',
+    () async {
+      for (final key in pausedStatus().keys) {
+        final response = pausedStatus()..remove(key);
+        final c = RiderAgreementController(
+          hasSession: () => true,
+          fetchCurrent: () async => response,
+          fetchStatus: () async => response,
+        );
+        await c.load();
+        expect(c.accessConfirmed, false, reason: key);
+        expect(c.canSubmit, false);
+        expect(await c.ensureAccepted(navigate: false), false, reason: key);
+      }
+      for (final patch in [
+        {'enforcementEnabled': 'false'},
+        {'workAllowed': false},
+        {'riderStatus': 'suspended'},
+        {'riderStatus': 'rejected'},
+        {'accepted': true},
+        {
+          'acceptance': {'version': '1.0'},
+        },
+        {'agreement': status()['agreement']},
+        {'acceptedAt': '2026-10-13T10:00:00Z'},
+      ]) {
+        final response = pausedStatus()..addAll(patch);
+        final c = RiderAgreementController(
+          hasSession: () => true,
+          fetchCurrent: () async => response,
+          fetchStatus: () async => response,
+        );
+        await c.load();
+        expect(c.canSubmit, false);
+        expect(c.accessConfirmed, false);
+        expect(await c.ensureAccepted(navigate: false), false);
+      }
+    },
+  );
+  test(
+    'pending onboarding can continue from verified pause without operational approval',
+    () async {
+      final data = pausedStatus(riderStatus: 'pending');
+      expect(data['workAllowed'], false);
+      final c = RiderAgreementController(
+        hasSession: () => true,
+        fetchStatus: () async => data,
+      );
+      expect(await c.ensureAccepted(navigate: false), true);
+      expect(c.confirmed.value, false);
+      // Existing navigation sends pending/limited-token sessions to pendingApproval;
+      // operational access remains separately authenticated and approval-gated.
+    },
+  );
+  test(
+    'pause is cleared on re-enable, invalidation, session loss or failed authoritative reads',
+    () async {
+      var response = pausedStatus(), session = true, unavailable = false;
+      final c = RiderAgreementController(
+        hasSession: () => session,
+        fetchStatus: () async {
+          if (unavailable) throw StateError('Fixture network outage');
+          return response;
+        },
+      );
+      expect(await c.ensureAccepted(navigate: false), true);
+      c.invalidate();
+      expect(c.paused.value, false);
+      expect(c.accessConfirmed, false);
+      expect(await c.ensureAccepted(navigate: false), true);
+      response = status();
+      expect(await c.ensureAccepted(navigate: false), false);
+      expect(c.paused.value, false);
+      response = status(accepted: true);
+      expect(await c.ensureAccepted(navigate: false), true);
+      expect(c.confirmed.value, true);
+      response = pausedStatus();
+      expect(await c.ensureAccepted(navigate: false), true);
+      expect(c.confirmed.value, false);
+      unavailable = true;
+      expect(await c.ensureAccepted(navigate: false), false);
+      expect(c.paused.value, false);
+      unavailable = false;
+      expect(await c.ensureAccepted(navigate: false), true);
+      session = false;
+      expect(c.accessConfirmed, false);
+      expect(await c.ensureAccepted(navigate: false), false);
+    },
+  );
+  test(
+    'pause enabled during a timed out accept reconciles access without fake acceptance or retry',
+    () async {
+      var posts = 0, continued = 0;
+      final c = RiderAgreementController(
+        hasSession: () => true,
+        fetchCurrent: () async => status(),
+        fetchStatus: () async => pausedStatus(),
+        saveAcceptance: (_) async {
+          posts++;
+          throw TimeoutException('Fixture timeout');
+        },
+        onAccepted: () => continued++,
+      );
+      await c.load();
+      c.consent.value = true;
+      await c.accept();
+      expect(posts, 1);
+      expect(continued, 1);
+      expect(c.confirmed.value, false);
+      expect(c.paused.value, true);
+      expect(c.consent.value, false);
+      expect(c.canSubmit, false);
+    },
+  );
+  for (final width in [320.0, 390.0]) {
+    testWidgets(
+      'paused agreement screen fits $width and shows Continue without consent',
+      (tester) async {
+        tester.view.physicalSize = Size(width, 850);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        var continued = 0;
+        final c = RiderAgreementController(
+          hasSession: () => true,
+          fetchCurrent: () async => pausedStatus(),
+          onAccepted: () => continued++,
+        );
+        await tester.pumpWidget(
+          GetMaterialApp(
+            theme: AppTheme.lightTheme,
+            home: MediaQuery(
+              data: MediaQueryData(
+                size: Size(width, 850),
+                textScaler: const TextScaler.linear(1.6),
+              ),
+              child: RiderAgreementView(controller: c),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.scrollUntilVisible(
+          find.text('Continue'),
+          180,
+          scrollable: find.byType(Scrollable).first,
+        );
+        expect(find.byType(CheckboxListTile), findsNothing);
+        expect(find.text('I Agree and Accept'), findsNothing);
+        expect(find.text('Acceptance confirmed by NaijaGo.'), findsNothing);
+        await tester.tap(find.text('Continue'));
+        expect(continued, 1);
+        expect(c.confirmed.value, false);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+  }
   test(
     'complete server document is required and consent starts unchecked',
     () async {

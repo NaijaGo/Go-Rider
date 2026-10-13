@@ -23,7 +23,7 @@ class OrdersController extends GetxController {
   Future<void> loadAssignedOrders() async {
     if (!_hasToken ||
         (Get.isRegistered<RiderAgreementController>() &&
-            !Get.find<RiderAgreementController>().confirmed.value)) {
+            !Get.find<RiderAgreementController>().accessConfirmed)) {
       assignedOrders.clear();
       return;
     }

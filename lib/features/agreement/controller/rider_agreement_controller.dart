@@ -52,13 +52,18 @@ class RiderAgreementController extends GetxController
   final consent = false.obs,
       loading = false.obs,
       submitting = false.obs,
-      confirmed = false.obs;
+      confirmed = false.obs,
+      paused = false.obs;
   final error = ''.obs;
   Future<bool>? _checking;
   int _generation = 0;
   bool get authenticated => _hasSession();
+  // Access during a verified server pause is separate from recorded acceptance.
+  bool get accessConfirmed =>
+      authenticated && (confirmed.value || paused.value);
   bool get canSubmit =>
       authenticated &&
+      !paused.value &&
       agreement.value?.valid == true &&
       consent.value &&
       !loading.value &&
@@ -88,6 +93,8 @@ class RiderAgreementController extends GetxController
   bool _accepted(Map<String, dynamic> data) {
     final doc = asMap(data['agreement']), record = asMap(data['acceptance']);
     return data['success'] == true &&
+        data['enforcementEnabled'] != false &&
+        data['enforcementPaused'] != true &&
         RegExp(
           r'^[a-f0-9]{24}$',
           caseSensitive: false,
@@ -103,11 +110,41 @@ class RiderAgreementController extends GetxController
         DateTime.tryParse(asString(record['acceptedAt'])) != null;
   }
 
+  bool _paused(Map<String, dynamic> data) =>
+      data['success'] == true &&
+      data['enforcementEnabled'] == false &&
+      data['enforcementPaused'] == true &&
+      data['accepted'] == false &&
+      data['requiresAcceptance'] == false &&
+      ['pending', 'approved'].contains(data['riderStatus']) &&
+      data['workAllowed'] == (data['riderStatus'] == 'approved') &&
+      data.containsKey('agreement') &&
+      data['agreement'] == null &&
+      data.containsKey('acceptance') &&
+      data['acceptance'] == null &&
+      data.containsKey('acceptedAt') &&
+      data['acceptedAt'] == null &&
+      data.containsKey('acceptedVersion') &&
+      data['acceptedVersion'] == null &&
+      data.containsKey('requiredVersion') &&
+      data['requiredVersion'] == null;
+
+  bool _verifyAccess(Map<String, dynamic> data) {
+    confirmed.value = _accepted(data);
+    paused.value = _paused(data);
+    if (paused.value) {
+      agreement.value = null;
+      consent.value = false;
+    }
+    return accessConfirmed;
+  }
+
   Future<void> load() async {
     if (loading.value || submitting.value) return;
     final generation = ++_generation;
     consent.value = false;
     confirmed.value = false;
+    paused.value = false;
     error.value = '';
     loading.value = true;
     try {
@@ -116,12 +153,20 @@ class RiderAgreementController extends GetxController
       }
       final data = await _fetchCurrent();
       if (isClosed || generation != _generation) return;
+      if (_paused(data)) {
+        _verifyAccess(data);
+        return;
+      }
+      if (data['enforcementEnabled'] == false ||
+          data['enforcementPaused'] == true) {
+        throw const FormatException('Incomplete rider access response');
+      }
       final document = RiderAgreementDocument(asMap(data['agreement']));
       if (data['success'] != true || !document.valid) {
         throw const FormatException('Incomplete agreement response');
       }
       agreement.value = document;
-      confirmed.value = _accepted(data);
+      _verifyAccess(data);
     } catch (e) {
       if (generation == _generation && !isClosed) await _failure(e);
     } finally {
@@ -147,12 +192,13 @@ class RiderAgreementController extends GetxController
   Future<bool> _check() async {
     final generation = _generation;
     confirmed.value = false;
+    paused.value = false;
     try {
       if (!_hasSession()) return false;
       final data = await _fetchStatus();
       if (isClosed || generation != _generation) return false;
-      confirmed.value = _accepted(data);
-      return confirmed.value;
+      error.value = '';
+      return _verifyAccess(data);
     } catch (e) {
       if (!isClosed && generation == _generation) await _failure(e);
       return false;
@@ -195,8 +241,7 @@ class RiderAgreementController extends GetxController
         // Includes timeouts, lost responses and stale versions. Never blindly POST again.
         final status = await _fetchStatus();
         if (generation != _generation || isClosed) return;
-        if (_accepted(status)) {
-          confirmed.value = true;
+        if (_verifyAccess(status)) {
           _continue();
           return;
         }
@@ -210,13 +255,12 @@ class RiderAgreementController extends GetxController
       }
       final status = await _fetchStatus();
       if (generation != _generation || isClosed) return;
-      if (!_accepted(status)) {
+      if (!_verifyAccess(status)) {
         refreshDocument = true;
         error.value =
             'A newer agreement is required. Read the latest version before continuing.';
         return;
       }
-      confirmed.value = true;
       _continue();
     } catch (e) {
       if (!isClosed && generation == _generation) await _failure(e);
@@ -245,7 +289,7 @@ class RiderAgreementController extends GetxController
   }
 
   void continueIfAccepted() {
-    if (confirmed.value) _continue();
+    if (accessConfirmed) _continue();
   }
 
   void requireReview() {
@@ -272,11 +316,13 @@ class RiderAgreementController extends GetxController
     loading.value = false;
     agreement.value = null;
     confirmed.value = false;
+    paused.value = false;
     consent.value = false;
   }
 
   Future<void> _failure(Object e) async {
     confirmed.value = false;
+    paused.value = false;
     consent.value = false;
     // Unknown persistence/read outcomes require a successful authoritative refresh
     // before the rider can consent and submit again.

@@ -251,6 +251,95 @@ void main() {
     Get.reset();
   });
 
+  Map<String, dynamic> pauseStatus(String status) => {
+    'success': true,
+    'enforcementEnabled': false,
+    'enforcementPaused': true,
+    'accepted': false,
+    'requiresAcceptance': false,
+    'workAllowed': status == 'approved',
+    'riderStatus': status,
+    'agreement': null,
+    'acceptance': null,
+    'requiredVersion': null,
+    'acceptedVersion': null,
+    'acceptedAt': null,
+  };
+
+  test(
+    'real order loading recognizes verified pause and stops after invalidation',
+    () async {
+      await AppStorage.saveToken('fixture-work-token');
+      await AppStorage.saveRiderStatus('approved');
+      final agreement = Get.put(
+        RiderAgreementController(
+          fetchStatus: () async => pauseStatus('approved'),
+        ),
+      );
+      expect(await agreement.ensureAccepted(navigate: false), true);
+      expect(agreement.confirmed.value, false);
+      final orders = OrdersController();
+      await orders.loadAssignedOrders();
+      expect(
+        api.requests.where((r) => r.path == ApiPaths.availableOrders),
+        hasLength(1),
+      );
+      agreement.invalidate();
+      await orders.loadAssignedOrders();
+      expect(
+        api.requests.where((r) => r.path == ApiPaths.availableOrders),
+        hasLength(1),
+      );
+      await AppStorage.clear();
+    },
+  );
+
+  testWidgets(
+    'pending agreement-only session continues to approval and never dashboard during pause',
+    (tester) async {
+      await AppStorage.clear();
+      await AppStorage.saveAgreementToken('fixture-enrollment-token');
+      await AppStorage.saveRiderStatus('pending');
+      final agreement = RiderAgreementController(
+        fetchCurrent: () async => pauseStatus('pending'),
+      );
+      await tester.pumpWidget(
+        GetMaterialApp(
+          theme: AppTheme.lightTheme,
+          home: RiderAgreementView(controller: agreement),
+          getPages: [
+            GetPage(
+              name: AppRoutes.pendingApproval,
+              page: () =>
+                  const Scaffold(body: Text('Pending fixture approval')),
+            ),
+            GetPage(
+              name: AppRoutes.dashboard,
+              page: () =>
+                  const Scaffold(body: Text('Operational fixture dashboard')),
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text('Continue'),
+        150,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
+      expect(find.text('Pending fixture approval'), findsOneWidget);
+      expect(find.text('Operational fixture dashboard'), findsNothing);
+      expect(AppStorage.token, isNull);
+      expect(agreement.confirmed.value, false);
+      expect(api.requests, isEmpty);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+      await AppStorage.clear();
+    },
+  );
+
   test(
     'agreement API preserves explicit enrollment token without substituting a work token',
     () async {

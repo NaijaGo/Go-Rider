@@ -287,6 +287,13 @@ class _DashboardViewState extends State<DashboardView> {
                       if (agreement.confirmed.value) {
                         return const SizedBox.shrink();
                       }
+                      if (agreement.paused.value) {
+                        return const SectionCard(
+                          child: Text(
+                            'Rider agreement temporarily paused. Your account approval and delivery checks still apply.',
+                          ),
+                        );
+                      }
                       return SectionCard(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,

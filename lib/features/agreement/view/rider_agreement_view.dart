@@ -76,8 +76,10 @@ class _RiderAgreementViewState extends State<RiderAgreementView> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                const Text(
-                  'Acceptance is required before going online or accepting new delivery orders. Account approval and existing delivery requirements also apply.',
+                Text(
+                  controller.paused.value
+                      ? 'The agreement requirement is temporarily paused by NaijaGo. Account approval and existing delivery requirements still apply.'
+                      : 'Acceptance is required before going online or accepting new delivery orders. Account approval and existing delivery requirements also apply.',
                 ),
                 if (Get.isRegistered<DeliveryController>() &&
                     AppStorage.riderStatus == 'approved' &&
@@ -96,7 +98,20 @@ class _RiderAgreementViewState extends State<RiderAgreementView> {
                 const SizedBox(height: 20),
                 if (controller.loading.value)
                   const Center(child: CircularProgressIndicator())
-                else if (controller.agreement.value != null) ...[
+                else if (controller.paused.value) ...[
+                  const SectionCard(
+                    child: Text(
+                      'Agreement requirement temporarily paused. No acceptance has been recorded by this action. You will be asked to review the agreement when the requirement resumes.',
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: controller.accessConfirmed
+                        ? controller.continueIfAccepted
+                        : null,
+                    child: const Text('Continue'),
+                  ),
+                ] else if (controller.agreement.value != null) ...[
                   Text(
                     'Agreement version ${controller.agreement.value!.version}',
                     style: const TextStyle(fontWeight: FontWeight.w800),
