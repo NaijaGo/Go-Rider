@@ -59,12 +59,36 @@ void main() {
     }
     expect(combined, isNot(contains('--export-method')));
   });
-  test('combined build collects artifacts without automatic publication', () {
+  test(
+    'combined build uploads to Apple using the confirmed rider integration',
+    () {
+      final config = File('codemagic.yaml').readAsStringSync();
+      final combined = config.split('  default-workflow:').last;
+      expect(combined, contains('integrations:'));
+      expect(combined, contains('app_store_connect: naijago_rider_key'));
+      expect(combined, contains('publishing:'));
+      expect(combined, contains('auth: integration'));
+      expect(combined, contains('build/ios/ipa/*.ipa'));
+      final iosOnly = config
+          .split('  ios-release:')
+          .last
+          .split('  default-workflow:')
+          .first;
+      expect(iosOnly, contains('app_store_connect: naijago_rider_key'));
+      expect(config, isNot(contains('app_store_connect: naijago_mainapp_key')));
+    },
+  );
+  test('combined Apple upload leaves review submission manual', () {
     final combined = File(
       'codemagic.yaml',
     ).readAsStringSync().split('  default-workflow:').last;
-    expect(combined, isNot(contains('publishing:')));
-    expect(combined, isNot(contains('submit_to_testflight:')));
+    expect(combined, contains('submit_to_testflight: false'));
+    expect(combined, contains('submit_to_app_store: false'));
+    expect(combined, isNot(contains('submit_to_testflight: true')));
+    expect(combined, isNot(contains('submit_to_app_store: true')));
+    expect(combined, isNot(contains('cancel_previous_submissions:')));
+    expect(combined, isNot(contains('expire_build_submitted_for_review:')));
+    expect(combined, isNot(contains('google_play:')));
     expect(combined, isNot(contains('triggering:')));
   });
   test('every CI workflow supplies the matching public Google clients', () {

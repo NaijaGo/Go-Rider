@@ -101,7 +101,7 @@ workflows:
         distribution_type: app_store
         bundle_identifier: com.naijago.gorider
     integrations:
-      app_store_connect: naijago_mainapp_key
+      app_store_connect: naijago_rider_key
     cache:
       cache_paths:
         - ~/.pub-cache
@@ -164,6 +164,8 @@ workflows:
     name: Default Workflow
     max_build_duration: 90
     instance_type: mac_mini_m2
+    integrations:
+      app_store_connect: naijago_rider_key
     environment:
       flutter: stable
       xcode: latest
@@ -259,4 +261,9 @@ workflows:
       - build/app/outputs/bundle/release/*.aab
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
-    # Build and collect files only; no automatic store or TestFlight publication.
+    # Upload the signed IPA; review submission remains manual in App Store Connect.
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: false
+        submit_to_app_store: false
