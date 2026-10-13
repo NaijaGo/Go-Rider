@@ -1,3 +1,4 @@
+import '../../../core/theme/app_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
@@ -54,7 +55,7 @@ class OrdersController extends GetxController {
       Get.snackbar(
         'Order Accepted',
         '${order.orderCode} is now your active delivery.',
-        backgroundColor: Colors.green,
+        backgroundColor: AppColors.green,
         colorText: Colors.white,
       );
 

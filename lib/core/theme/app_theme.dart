@@ -1,17 +1,18 @@
 import 'package:flutter/material.dart';
+import 'app_colors.dart';
 
 class AppTheme {
-  static const Color primary = Color(0xFF365D9B);
-  static const Color secondary = Color(0xFF5274A8);
-  static const Color deepBlue = Color(0xFF1D2D47);
-  static const Color green = Color(0xFF237854);
+  static const Color primary = AppColors.royalBlue;
+  static const Color secondary = AppColors.royalBlue;
+  static const Color deepBlue = AppColors.darkRoyalBlue;
+  static const Color green = AppColors.green;
   static const Color pickup = Color(0xFF986522);
-  static const Color softBlue = Color(0xFFF0F4FA);
-  static const Color border = Color(0xFFE2E8F2);
-  static const Color background = Color(0xFFF7F9FD);
+  static const Color softBlue = AppColors.lightBlue;
+  static const Color border = AppColors.border;
+  static const Color background = AppColors.background;
   static const Color card = Colors.white;
-  static const Color textDark = Color(0xFF182238);
-  static const Color textMuted = Color(0xFF5E6A7F);
+  static const Color textDark = AppColors.text;
+  static const Color textMuted = AppColors.mutedText;
 
   static ThemeData get lightTheme {
     return ThemeData(
@@ -26,6 +27,55 @@ class AppTheme {
         secondary: secondary,
         onSecondary: Colors.white,
         surface: card,
+        onSurface: AppColors.text,
+        onSurfaceVariant: AppColors.mutedText,
+        outline: AppColors.border,
+        primaryContainer: AppColors.lightBlue,
+        onPrimaryContainer: AppColors.darkRoyalBlue,
+        surfaceContainerHighest: AppColors.lightBlue,
+      ),
+
+      progressIndicatorTheme: const ProgressIndicatorThemeData(color: primary),
+      floatingActionButtonTheme: const FloatingActionButtonThemeData(
+        backgroundColor: primary,
+        foregroundColor: Colors.white,
+        elevation: 0,
+      ),
+      bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+        backgroundColor: card,
+        selectedItemColor: primary,
+        unselectedItemColor: textMuted,
+        elevation: 0,
+      ),
+
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: AppColors.royalBlue,
+          foregroundColor: AppColors.white,
+        ),
+      ),
+      navigationBarTheme: NavigationBarThemeData(
+        backgroundColor: AppColors.white,
+        indicatorColor: AppColors.lightBlue,
+        iconTheme: WidgetStateProperty.resolveWith(
+          (states) => IconThemeData(
+            color: states.contains(WidgetState.selected)
+                ? AppColors.royalBlue
+                : AppColors.mutedText,
+          ),
+        ),
+      ),
+      tabBarTheme: const TabBarThemeData(
+        labelColor: AppColors.royalBlue,
+        unselectedLabelColor: AppColors.mutedText,
+        indicatorColor: AppColors.royalBlue,
+      ),
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith(
+          (states) => states.contains(WidgetState.selected)
+              ? AppColors.royalBlue
+              : null,
+        ),
       ),
       appBarTheme: const AppBarTheme(
         backgroundColor: card,

@@ -1,3 +1,4 @@
+import '../../../core/theme/app_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
@@ -141,7 +142,7 @@ class _PushDiagnosticsCardState extends State<_PushDiagnosticsCard> {
                   connected
                       ? Icons.notifications_active
                       : Icons.notification_important,
-                  color: connected ? Colors.green : Colors.orange,
+                  color: connected ? AppColors.green : Colors.orange,
                 ),
                 const SizedBox(width: 12),
                 Expanded(
