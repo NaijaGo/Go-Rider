@@ -68,7 +68,7 @@ class RiderLocationPermissionService {
           builder: (dialogContext) => AlertDialog(
             title: const Text('Allow background location'),
             content: const Text(
-              'On the next Android screen, allow location access all the time. '
+              'In your device location settings, allow location access all the time (Always on iPhone). '
               'Go-Rider needs this so live rider and active trip tracking can '
               'continue while the app is minimized or the screen is locked.',
             ),
@@ -95,7 +95,7 @@ class RiderLocationPermissionService {
         title: const Text('Background location required'),
         content: const Text(
           'To go online and maintain live tracking, open App Settings, select '
-          'Permissions, select Location, and choose "Allow all the time".',
+          'Location, and choose "Allow all the time" or "Always" on iPhone.',
         ),
         actions: [
           TextButton(

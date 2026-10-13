@@ -4,6 +4,7 @@ class AppRoutes {
   static const forgotPassword = '/forgot-password';
   static const register = '/register';
   static const pendingApproval = '/pending-approval';
+  static const riderAgreement = '/rider-agreement';
   static const dashboard = '/dashboard';
 
   static const assignedOrders = '/assigned-orders';

@@ -1,6 +1,7 @@
 import 'package:latlong2/latlong.dart';
 
 import '../../../core/api/api_helpers.dart';
+import '../../../core/map/delivery_coordinates.dart';
 
 enum RiderOrderStatus {
   assigned,
@@ -28,15 +29,27 @@ class RiderPickupStop {
     required this.location,
   });
 
-  factory RiderPickupStop.fromBackend(dynamic source, {int fallbackSequence = 1}) {
+  factory RiderPickupStop.fromBackend(
+    dynamic source, {
+    int fallbackSequence = 1,
+  }) {
     final json = asMap(source);
-    final location = asMap(json['vendorLocation']);
+    final location = asMap(
+      json['vendorLocation'] ?? asMap(json['vendor'])['businessLocation'],
+    );
+    final parsedSequence = asDouble(
+      json['sequence'],
+      fallbackSequence.toDouble(),
+    );
     return RiderPickupStop(
       shipmentId: asString(json['shipment'] ?? json['_id']),
-      sequence: asDouble(json['sequence'], fallbackSequence.toDouble())
-          .toInt()
-          .clamp(1, 999)
-          .toInt(),
+      sequence:
+          (parsedSequence.isFinite
+                  ? parsedSequence
+                  : fallbackSequence.toDouble())
+              .toInt()
+              .clamp(1, 999)
+              .toInt(),
       sellerName: asString(
         json['sellerName'] ?? asMap(json['vendor'])['businessName'],
         'Vendor',
@@ -48,10 +61,11 @@ class RiderPickupStop {
             location['addressLine'],
         'Vendor address unavailable',
       ),
-      location: LatLng(
-        asDouble(json['latitude'] ?? location['latitude'] ?? location['lat']),
-        asDouble(json['longitude'] ?? location['longitude'] ?? location['lng']),
-      ),
+      location: readDeliveryCoordinate({
+        ...location,
+        if (json['latitude'] != null) 'latitude': json['latitude'],
+        if (json['longitude'] != null) 'longitude': json['longitude'],
+      }),
     );
   }
 }
@@ -72,6 +86,7 @@ class RiderOrder {
   final LatLng customerLocation;
   final List<RiderPickupStop> pickupStops;
   final RiderOrderStatus status;
+  final bool pickupVerified;
 
   const RiderOrder({
     required this.id,
@@ -89,6 +104,7 @@ class RiderOrder {
     required this.customerLocation,
     this.pickupStops = const [],
     required this.status,
+    this.pickupVerified = false,
   });
 
   factory RiderOrder.fromBackend(dynamic source) {
@@ -104,33 +120,42 @@ class RiderOrder {
         ? serializedPickupStops
               .asMap()
               .entries
-              .map((entry) => RiderPickupStop.fromBackend(
-                    entry.value,
-                    fallbackSequence: entry.key + 1,
-                  ))
+              .map(
+                (entry) => RiderPickupStop.fromBackend(
+                  entry.value,
+                  fallbackSequence: entry.key + 1,
+                ),
+              )
               .toList()
         : shipments
               .where((item) {
                 final shipment = asMap(item);
-                final status = asString(shipment['shipmentStatus']).toLowerCase();
-                return asString(shipment['fulfillmentMethod'], 'delivery').toLowerCase() != 'pickup' &&
+                final status = asString(
+                  shipment['shipmentStatus'],
+                ).toLowerCase();
+                return asString(
+                          shipment['fulfillmentMethod'],
+                          'delivery',
+                        ).toLowerCase() !=
+                        'pickup' &&
                     !{'rejected', 'cancelled', 'returned'}.contains(status);
               })
               .toList()
               .asMap()
               .entries
-              .map((entry) => RiderPickupStop.fromBackend(
-                    {
-                      ...asMap(entry.value),
-                      'sellerName': asMap(entry.value)['sellerName'] ??
-                          asMap(asMap(entry.value)['vendor'])['businessName'],
-                      'sequence': entry.key + 1,
-                    },
-                    fallbackSequence: entry.key + 1,
-                  ))
+              .map(
+                (entry) => RiderPickupStop.fromBackend({
+                  ...asMap(entry.value),
+                  'sellerName':
+                      asMap(entry.value)['sellerName'] ??
+                      asMap(asMap(entry.value)['vendor'])['businessName'],
+                  'sequence': entry.key + 1,
+                }, fallbackSequence: entry.key + 1),
+              )
               .toList();
     final firstPickupStop = pickupStops.isNotEmpty ? pickupStops.first : null;
-    final vendorLocation = firstPickupStop?.location ??
+    final vendorLocation =
+        firstPickupStop?.location ??
         _locationFromVendor(vendor, shipmentVendorLocation);
     final customerLocation = _locationFromOrder(json);
     final payoutBreakdown = asMap(json['riderPayoutBreakdown']);
@@ -139,11 +164,14 @@ class RiderOrder {
       id: asString(json['_id'] ?? json['id']),
       orderCode:
           '#NGO-${asString(json['_id'] ?? json['id']).substring(0, asString(json['_id'] ?? json['id']).length < 6 ? asString(json['_id'] ?? json['id']).length : 6).toUpperCase()}',
-      vendorName: firstPickupStop?.sellerName ?? asString(
-        vendor['businessName'] ?? vendor['storeName'] ?? vendor['fullName'],
-        'Vendor',
-      ),
-      vendorAddress: firstPickupStop?.address ??
+      vendorName:
+          firstPickupStop?.sellerName ??
+          asString(
+            vendor['businessName'] ?? vendor['storeName'] ?? vendor['fullName'],
+            'Vendor',
+          ),
+      vendorAddress:
+          firstPickupStop?.address ??
           _addressFromVendor(vendor, shipmentVendorLocation),
       customerName:
           [
@@ -176,6 +204,7 @@ class RiderOrder {
       vendorLocation: vendorLocation,
       customerLocation: customerLocation,
       pickupStops: pickupStops,
+      pickupVerified: _pickupVerified(json, shipments),
       status: _statusFromBackend(
         asString(json['shipmentStatus'] ?? json['mainOrderStatus']),
       ),
@@ -215,7 +244,32 @@ class RiderOrder {
       customerLocation: customerLocation ?? this.customerLocation,
       pickupStops: pickupStops ?? this.pickupStops,
       status: status ?? this.status,
+      pickupVerified: pickupVerified,
     );
+  }
+
+  static bool _pickupVerified(
+    Map<String, dynamic> order,
+    List<dynamic> shipments,
+  ) {
+    bool verified(Map<String, dynamic> value) =>
+        asString(value['shipmentStatus'] ?? value['mainOrderStatus']) ==
+            'out_for_delivery' ||
+        DateTime.tryParse(asString(value['pickedUpAt'])) != null;
+    if (verified(order)) return true;
+    final deliveryShipments = shipments
+        .map(asMap)
+        .where(
+          (shipment) =>
+              asString(shipment['fulfillmentMethod'], 'delivery') != 'pickup' &&
+              !{
+                'rejected',
+                'cancelled',
+                'returned',
+              }.contains(asString(shipment['shipmentStatus'])),
+        )
+        .toList();
+    return deliveryShipments.isNotEmpty && deliveryShipments.every(verified);
   }
 
   static RiderOrderStatus _statusFromBackend(String status) {
@@ -239,18 +293,19 @@ class RiderOrder {
     final location = shipmentLocation.isNotEmpty
         ? shipmentLocation
         : asMap(vendor['businessLocation']);
-    return LatLng(
-      asDouble(location['latitude'] ?? location['lat']),
-      asDouble(location['longitude'] ?? location['lng']),
-    );
+    return readDeliveryCoordinate(location);
   }
 
   static LatLng _locationFromOrder(Map<String, dynamic> order) {
-    final location = asMap(order['userLocation'] ?? order['deliveryLocation']);
-    return LatLng(
-      asDouble(location['latitude'] ?? location['lat']),
-      asDouble(location['longitude'] ?? location['lng']),
-    );
+    for (final source in [
+      order['userLocation'],
+      order['deliveryLocation'],
+      order['shippingAddress'],
+    ]) {
+      final point = readDeliveryCoordinate(source);
+      if (validDeliveryCoordinate(point)) return point;
+    }
+    return const LatLng(0, 0);
   }
 
   static String _addressFromVendor(
@@ -272,6 +327,10 @@ class RiderOrder {
   static String _addressText(dynamic value) {
     if (value is String && value.isNotEmpty) return value;
     final address = asMap(value);
+    final formatted = asString(
+      address['formattedAddress'] ?? address['addressLine'],
+    );
+    if (formatted.isNotEmpty) return formatted;
     final parts = [
       address['street'],
       address['address'],

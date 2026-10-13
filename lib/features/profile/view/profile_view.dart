@@ -734,13 +734,13 @@ class _ProfileHeader extends StatelessWidget {
           gradient: const LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [AppTheme.primary, Color(0xFF0B335C)],
+            colors: [AppTheme.primary, AppTheme.deepBlue],
           ),
           boxShadow: [
             BoxShadow(
-              color: AppTheme.primary.withValues(alpha: 0.18),
-              blurRadius: 28,
-              offset: const Offset(0, 14),
+              color: AppTheme.primary.withValues(alpha: 0.07),
+              blurRadius: 18,
+              offset: const Offset(0, 6),
             ),
           ],
         ),

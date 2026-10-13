@@ -1,4 +1,5 @@
 import 'package:get/get.dart';
+import '../features/agreement/view/rider_agreement_view.dart';
 import 'package:naijago_ridersapp/features/earnings/view/withdrawal_request_view.dart';
 import 'package:naijago_ridersapp/features/orders/view/assigned_orders_view.dart';
 import 'package:naijago_ridersapp/features/orders/view/confirm_delivered_view.dart';
@@ -19,6 +20,10 @@ import 'app_routes.dart';
 
 class AppPages {
   static final pages = [
+    GetPage(
+      name: AppRoutes.riderAgreement,
+      page: () => const RiderAgreementView(),
+    ),
     GetPage(name: AppRoutes.splash, page: () => const SplashView()),
     GetPage(name: AppRoutes.login, page: () => const LoginView()),
     GetPage(

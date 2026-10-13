@@ -9,6 +9,16 @@ class AppStorage {
   static const String _riderNameKey = 'rider_name';
   static const String _riderEmailKey = 'rider_email';
 
+  static String? get agreementToken =>
+      _box.read<String>('rider_agreement_token');
+  static Future<void> saveAgreementToken(String? token) async {
+    if (token == null) {
+      await _box.remove('rider_agreement_token');
+    } else {
+      await _box.write('rider_agreement_token', token);
+    }
+  }
+
   static String? get token => _box.read<String>(_tokenKey);
   static String? get riderStatus => _box.read<String>(_riderStatusKey);
   static bool get isRiderOnline => _box.read<bool>(_riderOnlineKey) ?? false;

@@ -6,6 +6,7 @@ import '../../../core/widgets/app_background.dart';
 import '../../../core/widgets/section_card.dart';
 import '../../../routes/app_routes.dart';
 import '../controller/delivery_controller.dart';
+import '../../map/controller/map_controller.dart';
 
 class ActiveDeliveryView extends StatefulWidget {
   const ActiveDeliveryView({super.key});
@@ -130,11 +131,15 @@ class _ActiveDeliveryViewState extends State<ActiveDeliveryView> {
                       const SizedBox(height: 12),
                       SectionCard(
                         child: Column(
-                          children: controller.pickupStops.asMap().entries.map((entry) {
+                          children: controller.pickupStops.asMap().entries.map((
+                            entry,
+                          ) {
                             final index = entry.key;
                             final stop = entry.value;
-                            final isCurrent = index == controller.currentPickupIndex.value;
-                            final isCompleted = index < controller.currentPickupIndex.value;
+                            final isCurrent =
+                                index == controller.currentPickupIndex.value;
+                            final isCompleted =
+                                index < controller.currentPickupIndex.value;
                             return Column(
                               children: [
                                 ListTile(
@@ -143,16 +148,20 @@ class _ActiveDeliveryViewState extends State<ActiveDeliveryView> {
                                     backgroundColor: isCompleted
                                         ? AppTheme.green.withValues(alpha: 0.14)
                                         : isCurrent
-                                            ? AppTheme.secondary.withValues(alpha: 0.14)
-                                            : AppTheme.textMuted.withValues(alpha: 0.10),
+                                        ? AppTheme.secondary.withValues(
+                                            alpha: 0.14,
+                                          )
+                                        : AppTheme.textMuted.withValues(
+                                            alpha: 0.10,
+                                          ),
                                     child: Text(
                                       '${index + 1}',
                                       style: TextStyle(
                                         color: isCompleted
                                             ? AppTheme.green
                                             : isCurrent
-                                                ? AppTheme.secondary
-                                                : AppTheme.textMuted,
+                                            ? AppTheme.secondary
+                                            : AppTheme.textMuted,
                                         fontWeight: FontWeight.w800,
                                       ),
                                     ),
@@ -166,13 +175,21 @@ class _ActiveDeliveryViewState extends State<ActiveDeliveryView> {
                                   ),
                                   subtitle: Text(
                                     stop.address,
-                                    style: const TextStyle(color: AppTheme.textMuted),
+                                    style: const TextStyle(
+                                      color: AppTheme.textMuted,
+                                    ),
                                   ),
                                   trailing: isCompleted
-                                      ? const Icon(Icons.check_circle, color: AppTheme.green)
+                                      ? const Icon(
+                                          Icons.check_circle,
+                                          color: AppTheme.green,
+                                        )
                                       : isCurrent
-                                          ? const Icon(Icons.navigation, color: AppTheme.secondary)
-                                          : null,
+                                      ? const Icon(
+                                          Icons.navigation,
+                                          color: AppTheme.secondary,
+                                        )
+                                      : null,
                                 ),
                                 if (index < controller.pickupStops.length - 1)
                                   const Divider(height: 8),
@@ -184,7 +201,10 @@ class _ActiveDeliveryViewState extends State<ActiveDeliveryView> {
                       const SizedBox(height: 8),
                       const Text(
                         'Pickup verification remains one order-level code after you collect all listed shipments.',
-                        style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
+                        style: TextStyle(
+                          color: AppTheme.textMuted,
+                          fontSize: 12,
+                        ),
                       ),
                     ],
 
@@ -284,9 +304,11 @@ class _ActiveDeliveryViewState extends State<ActiveDeliveryView> {
                           ? controller.markArrivedAtVendor
                           : null,
                       icon: const Icon(Icons.storefront),
-                      label: Text(controller.pickupStops.length > 1
-                          ? 'Mark Arrived at Pickup ${controller.currentPickupIndex.value + 1}'
-                          : 'Mark Arrived at Vendor'),
+                      label: Text(
+                        controller.pickupStops.length > 1
+                            ? 'Mark Arrived at Pickup ${controller.currentPickupIndex.value + 1}'
+                            : 'Mark Arrived at Vendor',
+                      ),
                     ),
 
                     const SizedBox(height: 12),
@@ -297,8 +319,8 @@ class _ActiveDeliveryViewState extends State<ActiveDeliveryView> {
                       label: Text(
                         controller.isGoingToVendor
                             ? controller.pickupStops.length > 1
-                                ? 'Follow Map to Pickup ${controller.currentPickupIndex.value + 1}'
-                                : 'Follow Map to Vendor'
+                                  ? 'Follow Map to Pickup ${controller.currentPickupIndex.value + 1}'
+                                  : 'Follow Map to Vendor'
                             : controller.isGoingToCustomer
                             ? 'Follow Map to Customer'
                             : 'View Delivery Map',
@@ -308,7 +330,8 @@ class _ActiveDeliveryViewState extends State<ActiveDeliveryView> {
                     const SizedBox(height: 12),
 
                     OutlinedButton.icon(
-                      onPressed: controller.hasArrivedAtVendor &&
+                      onPressed:
+                          controller.hasArrivedAtVendor &&
                               !controller.hasNextPickupStop
                           ? () => Get.toNamed(AppRoutes.confirmPickup)
                           : null,
@@ -412,7 +435,9 @@ class _EtaCard extends StatelessWidget {
   const _EtaCard({required this.controller});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => Obx(_buildCard);
+
+  Widget _buildCard() {
     final bool goingToVendor = controller.isGoingToVendor;
     final bool goingToCustomer = controller.isGoingToCustomer;
 
@@ -424,16 +449,14 @@ class _EtaCard extends StatelessWidget {
 
     if (goingToVendor) {
       title = 'Time to Vendor';
-      time = '${controller.minutesToVendor} mins';
-      subtitle =
-          '${controller.distanceToVendorKm.toStringAsFixed(2)} km to pickup location';
+      time = 'Route pending';
+      subtitle = 'Open the delivery map for a road route and live ETA.';
       icon = Icons.storefront;
       color = Colors.orange;
     } else if (goingToCustomer) {
       title = 'Time to Customer';
-      time = '${controller.minutesToCustomer} mins';
-      subtitle =
-          '${controller.distanceToCustomerKm.toStringAsFixed(2)} km to delivery location';
+      time = 'Route pending';
+      subtitle = 'Open the delivery map for a road route and live ETA.';
       icon = Icons.location_on_outlined;
       color = AppTheme.green;
     } else if (controller.hasArrivedAtVendor && !controller.hasPickedUp) {
@@ -454,6 +477,18 @@ class _EtaCard extends StatelessWidget {
       subtitle = 'This order has been completed successfully.';
       icon = Icons.check_circle_outline;
       color = AppTheme.green;
+    }
+
+    if ((goingToVendor || goingToCustomer) &&
+        Get.isRegistered<RiderMapController>()) {
+      final map = Get.find<RiderMapController>();
+      if (map.hasRoadRoute.value && !map.isGpsStale) {
+        time = '${map.routeDurationMinutes.value} mins';
+        subtitle =
+            '${map.routeDistanceKm.value.toStringAsFixed(1)} km by road to ${goingToVendor ? 'pickup' : 'customer'}';
+      } else {
+        subtitle = map.routeStatus.value;
+      }
     }
 
     return SectionCard(
@@ -522,13 +557,13 @@ class _DeliveryHeader extends StatelessWidget {
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [AppTheme.primary, Color(0xFF0B335C)],
+          colors: [AppTheme.primary, AppTheme.deepBlue],
         ),
         boxShadow: [
           BoxShadow(
-            color: AppTheme.primary.withValues(alpha: 0.18),
-            blurRadius: 28,
-            offset: const Offset(0, 14),
+            color: AppTheme.primary.withValues(alpha: 0.07),
+            blurRadius: 18,
+            offset: const Offset(0, 6),
           ),
         ],
       ),

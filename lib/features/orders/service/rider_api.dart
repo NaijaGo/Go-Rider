@@ -20,6 +20,7 @@ class RiderApi {
       ),
       data: {
         'idToken': idToken,
+        'agreementOnly': true,
         if (linkPassword != null) 'linkPassword': linkPassword,
         if (oneSignalPlayerId != null) 'oneSignalPlayerId': oneSignalPlayerId,
       },
@@ -39,6 +40,7 @@ class RiderApi {
       data: {
         'email': email,
         'password': password,
+        'agreementOnly': true,
         if (oneSignalPlayerId != null && oneSignalPlayerId.isNotEmpty)
           'oneSignalPlayerId': oneSignalPlayerId,
       },

@@ -2,6 +2,7 @@ import 'package:get/get.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../../core/api/api_helpers.dart';
+import '../../../core/map/delivery_coordinates.dart';
 import '../../../core/storage/app_storage.dart';
 import '../../earnings/controller/withdrawal_controller.dart';
 import '../../map/controller/map_controller.dart';
@@ -18,6 +19,13 @@ enum DeliveryStage {
 }
 
 class DeliveryController extends GetxController {
+  DeliveryController({void Function(String, String)? notifier})
+    : _notify =
+          notifier ??
+          ((title, message) {
+            Get.snackbar(title, message);
+          });
+  final void Function(String, String) _notify;
   final stage = DeliveryStage.goingToVendor.obs;
 
   final activeOrder = Rxn<RiderOrder>();
@@ -78,7 +86,9 @@ class DeliveryController extends GetxController {
           .clamp(0, pickupStops.length - 1)
           .toInt();
     }
-    final firstStop = order.pickupStops.isNotEmpty ? order.pickupStops.first : null;
+    final firstStop = order.pickupStops.isNotEmpty
+        ? order.pickupStops.first
+        : null;
     final selectedStop = currentPickupStop ?? firstStop;
     vendorLocation.value = selectedStop?.location ?? order.vendorLocation;
     customerLocation.value = order.customerLocation;
@@ -86,7 +96,11 @@ class DeliveryController extends GetxController {
     vendorAddress.value = selectedStop?.address ?? order.vendorAddress;
     customerAddress.value = order.customerAddress;
 
-    stage.value = isSameOrder ? previousStage : DeliveryStage.goingToVendor;
+    stage.value = order.pickupVerified && (!isSameOrder || !hasPickedUp)
+        ? DeliveryStage.goingToCustomer
+        : isSameOrder
+        ? previousStage
+        : DeliveryStage.goingToVendor;
     if (Get.isRegistered<RiderMapController>()) {
       Get.find<RiderMapController>().syncDelivery(this);
     }
@@ -95,11 +109,20 @@ class DeliveryController extends GetxController {
   void clearActiveOrder() {
     activeOrder.value = null;
     stage.value = DeliveryStage.goingToVendor;
+    currentPickupIndex.value = 0;
+    vendorLocation.value = const LatLng(0, 0);
+    customerLocation.value = const LatLng(0, 0);
+    vendorAddress.value = 'Not available';
+    customerAddress.value = 'Not available';
+    if (Get.isRegistered<RiderMapController>()) {
+      Get.find<RiderMapController>().syncDelivery(this);
+    }
   }
 
   String get orderCode => activeOrder.value?.orderCode ?? 'No active order';
 
-  String get vendorName => currentPickupStop?.sellerName ??
+  String get vendorName =>
+      currentPickupStop?.sellerName ??
       activeOrder.value?.vendorName ??
       'Not available';
 
@@ -115,10 +138,11 @@ class DeliveryController extends GetxController {
 
   RiderPickupStop? get currentPickupStop =>
       pickupStops.isEmpty || currentPickupIndex.value >= pickupStops.length
-          ? null
-          : pickupStops[currentPickupIndex.value];
+      ? null
+      : pickupStops[currentPickupIndex.value];
 
-  bool get hasNextPickupStop => currentPickupIndex.value + 1 < pickupStops.length;
+  bool get hasNextPickupStop =>
+      currentPickupIndex.value + 1 < pickupStops.length;
 
   String get deliveryFeeText {
     final fee = activeOrder.value?.deliveryFee ?? 0;
@@ -126,7 +150,11 @@ class DeliveryController extends GetxController {
   }
 
   double get distanceToVendorKm {
-    if (activeOrder.value == null) return 0;
+    if (activeOrder.value == null ||
+        !validDeliveryCoordinate(riderLocation.value) ||
+        !validDeliveryCoordinate(vendorLocation.value)) {
+      return 0;
+    }
     final meters = distance.as(
       LengthUnit.Meter,
       riderLocation.value,
@@ -137,7 +165,11 @@ class DeliveryController extends GetxController {
   }
 
   double get distanceToCustomerKm {
-    if (activeOrder.value == null) return 0;
+    if (activeOrder.value == null ||
+        !validDeliveryCoordinate(riderLocation.value) ||
+        !validDeliveryCoordinate(customerLocation.value)) {
+      return 0;
+    }
     final meters = distance.as(
       LengthUnit.Meter,
       riderLocation.value,
@@ -212,16 +244,17 @@ class DeliveryController extends GetxController {
   Future<bool> confirmPickup(String otp) async {
     final order = activeOrder.value;
     if (order == null) {
-      Get.snackbar('Error', 'No active delivery selected');
+      _notify('Error', 'No active delivery selected');
       return false;
     }
 
     try {
       await RiderApi.verifyPickup(orderId: order.id, pickupOTP: otp);
+      if (activeOrder.value?.id != order.id) return false;
       markPickedUp();
       return true;
     } catch (e) {
-      Get.snackbar('Error', apiMessage(e, 'Pickup verification failed'));
+      _notify('Error', apiMessage(e, 'Pickup verification failed'));
       return false;
     }
   }
@@ -243,7 +276,7 @@ class DeliveryController extends GetxController {
   Future<bool> confirmDelivery(String otp) async {
     final order = activeOrder.value;
     if (order == null) {
-      Get.snackbar('Error', 'No active delivery selected');
+      _notify('Error', 'No active delivery selected');
       return false;
     }
 
@@ -252,6 +285,7 @@ class DeliveryController extends GetxController {
         orderId: order.id,
         deliveryOTP: otp,
       );
+      if (activeOrder.value?.id != order.id) return false;
       markDelivered();
       clearActiveOrder();
       if (Get.isRegistered<RiderMapController>()) {
@@ -261,7 +295,7 @@ class DeliveryController extends GetxController {
         Get.find<WithdrawalController>().loadEarnings();
       }
       final earnings = asDouble(data['earnings']);
-      Get.snackbar(
+      _notify(
         'Delivery Complete',
         earnings > 0
             ? 'Actual earning: ₦${earnings.toStringAsFixed(0)}. You are available for the next job.'
@@ -272,7 +306,7 @@ class DeliveryController extends GetxController {
       );
       return true;
     } catch (e) {
-      Get.snackbar('Error', apiMessage(e, 'Delivery verification failed'));
+      _notify('Error', apiMessage(e, 'Delivery verification failed'));
       return false;
     }
   }

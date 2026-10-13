@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/push/onesignal_service.dart';
+import '../../../core/push/rider_alerts.dart';
 import '../../../core/widgets/app_background.dart';
 import '../../../core/widgets/section_card.dart';
 import '../controller/notification_controller.dart';
@@ -10,87 +11,88 @@ import '../model/rider_notification.dart';
 
 class NotificationsView extends StatelessWidget {
   const NotificationsView({super.key});
-
   @override
   Widget build(BuildContext context) {
     final controller = Get.find<NotificationController>();
-
     return Scaffold(
       body: AppBackground(
         child: SafeArea(
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 10),
-                child: Row(
-                  children: [
-                    IconButton(
-                      onPressed: Get.back,
-                      icon: const Icon(Icons.arrow_back),
-                    ),
-                    const SizedBox(width: 6),
-                    const Expanded(
-                      child: Text(
-                        'Notifications',
-                        style: TextStyle(
-                          color: AppTheme.textDark,
-                          fontSize: 24,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: -0.4,
+          child: RefreshIndicator(
+            onRefresh: controller.loadNotifications,
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 10),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        onPressed: Get.back,
+                        icon: const Icon(Icons.arrow_back),
+                      ),
+                      const SizedBox(width: 6),
+                      const Expanded(
+                        child: Text(
+                          'Notifications',
+                          style: TextStyle(
+                            color: AppTheme.textDark,
+                            fontSize: 24,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -0.4,
+                          ),
                         ),
                       ),
-                    ),
-                    TextButton(
-                      onPressed: () => controller.markAllAsRead(),
-                      child: const Text(
-                        'Mark all read',
-                        style: TextStyle(
-                          color: AppTheme.primary,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              const _PushDiagnosticsCard(),
-              Expanded(
-                child: Obx(() {
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: controller.markAllAsRead,
+                      child: const Text('Mark all read'),
+                    ),
+                  ),
+                ),
+                const _PushDiagnosticsCard(),
+                Obx(() {
                   if (controller.isLoading.value) {
-                    return const Center(child: CircularProgressIndicator());
+                    return const Padding(
+                      padding: EdgeInsets.all(30),
+                      child: Center(child: CircularProgressIndicator()),
+                    );
                   }
-
                   if (controller.notifications.isEmpty) {
-                    return const Center(
-                      child: Text(
-                        'No notifications yet.',
-                        style: TextStyle(
-                          color: AppTheme.textMuted,
-                          fontWeight: FontWeight.w600,
+                    return const Padding(
+                      padding: EdgeInsets.all(30),
+                      child: Center(
+                        child: Text(
+                          'No notifications yet.',
+                          style: TextStyle(
+                            color: AppTheme.textMuted,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                     );
                   }
-
-                  return RefreshIndicator(
-                    onRefresh: controller.loadNotifications,
-                    child: ListView.separated(
-                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-                      itemCount: controller.notifications.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 12),
-                      itemBuilder: (context, index) {
-                        final item = controller.notifications[index];
-
-                        return _NotificationCard(
-                          notification: item,
-                          onTap: () => controller.markAsRead(item.id),
-                        );
-                      },
-                    ),
+                  return Column(
+                    children: [
+                      for (final item in controller.notifications)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
+                          child: _NotificationCard(
+                            notification: item,
+                            onTap: () => controller.markAsRead(item.id),
+                          ),
+                        ),
+                      const SizedBox(height: 24),
+                    ],
                   );
                 }),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -111,11 +113,10 @@ class _PushDiagnosticsCardState extends State<_PushDiagnosticsCard> {
   @override
   void initState() {
     super.initState();
-    _refresh();
+    _status = OneSignalService.diagnostics();
   }
 
-  Future<void> _refresh() async {
-    await Future<void>.delayed(const Duration(milliseconds: 250));
+  void _refresh() {
     if (mounted) setState(() => _status = OneSignalService.diagnostics());
   }
 
@@ -126,41 +127,79 @@ class _PushDiagnosticsCardState extends State<_PushDiagnosticsCard> {
         _status['optedIn'] == true &&
         (_status['subscriptionId']?.toString().isNotEmpty ?? false) &&
         _status['tokenPresent'] == true;
-    final subscriptionId = _status['subscriptionId']?.toString() ?? 'waiting';
-    final shortId = subscriptionId.length > 12
-        ? '${subscriptionId.substring(0, 12)}...'
-        : subscriptionId;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
       child: SectionCard(
         padding: const EdgeInsets.all(14),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(
-              connected
-                  ? Icons.notifications_active
-                  : Icons.notification_important,
-              color: connected ? Colors.green : Colors.orange,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                connected
-                    ? 'Push connected | App ...${_status['appIdSuffix']} | $shortId'
-                    : 'Push not ready | permission=${_status['permission']} | '
-                          'optedIn=${_status['optedIn']} | subscription=$shortId',
-                style: const TextStyle(
-                  color: AppTheme.textDark,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 12,
+            Row(
+              children: [
+                Icon(
+                  connected
+                      ? Icons.notifications_active
+                      : Icons.notification_important,
+                  color: connected ? Colors.green : Colors.orange,
                 ),
-              ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    connected
+                        ? 'Delivery alerts are connected.'
+                        : 'Delivery alerts are not connected yet. Allow notifications in your device settings, then refresh.',
+
+                    style: const TextStyle(
+                      color: AppTheme.textDark,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Refresh push status',
+                  onPressed: _refresh,
+                  icon: const Icon(Icons.refresh),
+                ),
+              ],
             ),
-            IconButton(
-              tooltip: 'Refresh push status',
-              onPressed: _refresh,
-              icon: const Icon(Icons.refresh),
+
+            const SizedBox(height: 8),
+            const Text(
+              'Keep delivery notifications and sound enabled. Tap an order alert to open the rider app. Volume and silent mode follow your phone settings.',
+              style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
+            ),
+            Wrap(
+              spacing: 8,
+              children: [
+                TextButton.icon(
+                  onPressed: RiderAlerts.play,
+                  icon: const Icon(Icons.volume_up_outlined),
+                  label: const Text('Test sound'),
+                ),
+                TextButton.icon(
+                  onPressed: () async {
+                    try {
+                      await RiderAlerts.channel.invokeMethod<void>(
+                        'openSettings',
+                      );
+                    } catch (_) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Open your phone settings and allow NaijaGo rider notifications.',
+                            ),
+                          ),
+                        );
+                      }
+                    }
+                  },
+                  icon: const Icon(Icons.settings_outlined),
+                  label: const Text('Alert settings'),
+                ),
+              ],
             ),
           ],
         ),

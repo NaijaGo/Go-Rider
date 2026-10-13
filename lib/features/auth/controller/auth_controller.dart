@@ -12,6 +12,8 @@ import '../../../features/orders/controller/orders_controller.dart';
 import '../../../features/profile/controller/rider_profile_controller.dart';
 import '../../../routes/app_routes.dart';
 import '../service/auth_api.dart';
+import '../service/registration_checks.dart';
+import '../../agreement/controller/rider_agreement_controller.dart';
 import '../view/google_login_view.dart';
 import '../../../core/auth/google_auth_service.dart';
 
@@ -67,12 +69,19 @@ class AuthController extends GetxController {
   bool get isGoogleSignup => _googleIdToken != null;
 
   Future<void> pickRegistrationDocument(Rx<XFile?> target) async {
-    final image = await _imagePicker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 80,
-    );
-
-    if (image != null) target.value = image;
+    if (isLoading.value) return;
+    try {
+      final image = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 80,
+      );
+      if (image != null && !isClosed && !isLoading.value) target.value = image;
+    } catch (_) {
+      Get.snackbar(
+        'Document upload',
+        'Unable to open your photos. Check photo permission and try again.',
+      );
+    }
   }
 
   Future<void> login() async {
@@ -105,6 +114,18 @@ class AuthController extends GetxController {
   }
 
   Future<void> _acceptSession(Map<String, dynamic> data) async {
+    if (data['status'] == 'pending' &&
+        asString(data['agreementToken']).isNotEmpty &&
+        asString(data['_id']).isNotEmpty) {
+      await AppStorage.clear();
+      await AppStorage.saveAgreementToken(asString(data['agreementToken']));
+      await AppStorage.saveRiderStatus('pending');
+      if (Get.isRegistered<RiderAgreementController>()) {
+        Get.find<RiderAgreementController>().invalidate();
+      }
+      Get.offAllNamed(AppRoutes.riderAgreement);
+      return;
+    }
     if (asString(data['token']).isEmpty || asString(data['_id']).isEmpty) {
       throw const FormatException('Invalid sign-in response');
     }
@@ -113,6 +134,10 @@ class AuthController extends GetxController {
     final email = asString(data['email'], emailOrPhoneController.text.trim());
     final vehicleType = asString(data['vehicleType']);
 
+    await AppStorage.saveAgreementToken(null);
+    if (Get.isRegistered<RiderAgreementController>()) {
+      Get.find<RiderAgreementController>().invalidate();
+    }
     await AppStorage.saveToken(asString(data['token']));
     await AppStorage.saveRiderStatus(status);
     await AppStorage.saveRiderIdentity(
@@ -131,6 +156,13 @@ class AuthController extends GetxController {
     _refreshProtectedControllers();
 
     if (AppStorage.riderStatus == 'approved') {
+      if (Get.isRegistered<RiderAgreementController>() &&
+          !await Get.find<RiderAgreementController>().ensureAccepted(
+            navigate: false,
+          )) {
+        if (AppStorage.token != null) Get.offAllNamed(AppRoutes.riderAgreement);
+        return;
+      }
       Get.offAllNamed(AppRoutes.dashboard);
       await OneSignalService.consumePendingDestination();
     } else {
@@ -192,6 +224,12 @@ class AuthController extends GetxController {
   }
 
   Future<void> register() async {
+    if (isLoading.value) return;
+    final validation = registrationError();
+    if (validation != null) {
+      Get.snackbar('Check your details', validation);
+      return;
+    }
     if (!isGoogleSignup &&
         registerPasswordController.text.trim() !=
             confirmPasswordController.text.trim()) {
@@ -273,7 +311,16 @@ class AuthController extends GetxController {
         asString(registration['message'], 'Please wait for Admin approval.'),
       );
 
-      Get.offAllNamed(AppRoutes.pendingApproval);
+      await AppStorage.saveAgreementToken(
+        asString(registration['agreementToken']),
+      );
+      await AppStorage.saveRiderStatus(
+        asString(registration['status'], 'pending'),
+      );
+      if (Get.isRegistered<RiderAgreementController>()) {
+        Get.find<RiderAgreementController>().invalidate();
+      }
+      Get.offAllNamed(AppRoutes.riderAgreement);
     } catch (e) {
       Get.snackbar('Error', apiMessage(e, 'Registration failed'));
     } finally {
@@ -281,7 +328,46 @@ class AuthController extends GetxController {
     }
   }
 
+  String? registrationError() {
+    final fields = <String, TextEditingController>{
+      'Full Name': fullNameController,
+      'Phone Number': phoneController,
+      'Email': emailController,
+      'Date of Birth': dateOfBirthController,
+      'Home Address': homeAddressController,
+      'State': stateController,
+      'City / Operating Area': cityController,
+      'Vehicle Type': vehicleTypeController,
+      'Vehicle Brand / Model': vehicleModelController,
+      'Plate Number': plateNumberController,
+      "Driver's License Number": licenseNumberController,
+      'ID Type': idTypeController,
+      'ID Number': idNumberController,
+      'Bank Name': bankNameController,
+      'Account Number': accountNumberController,
+      'Account Name': accountNameController,
+      'Emergency Contact Name': emergencyNameController,
+      'Emergency Contact Phone': emergencyPhoneController,
+      'Relationship': emergencyRelationshipController,
+      if (!isGoogleSignup) 'Password': registerPasswordController,
+      if (!isGoogleSignup) 'Confirm Password': confirmPasswordController,
+    };
+    for (final entry in fields.entries) {
+      final error = RegistrationChecks.field(
+        entry.key,
+        entry.value.text,
+        password: registerPasswordController.text.trim(),
+        vehicle: vehicleTypeController.text,
+      );
+      if (error != null) return error;
+    }
+    return null;
+  }
+
   Future<void> logout() async {
+    if (Get.isRegistered<RiderAgreementController>()) {
+      Get.find<RiderAgreementController>().invalidate();
+    }
     if (Get.isRegistered<NotificationController>()) {
       Get.find<NotificationController>().stopLiveNotifications();
     }

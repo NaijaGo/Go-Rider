@@ -17,21 +17,41 @@ workflows:
         - ~/.gradle/caches
         - ~/.gradle/wrapper
     scripts:
+      - name: Validate rider configuration and prepare version metadata
+        script: |
+          set -euo pipefail
+          cd "$CM_BUILD_DIR"
+          : "${API_BASE_URL:?Set the rider backend URL}"
+          : "${ONESIGNAL_APP_ID:?Set the public rider OneSignal app ID}"
+          : "${GOOGLE_SERVER_CLIENT_ID:?Set the public Google server client ID}"
+          : "${GOOGLE_IOS_CLIENT_ID:?Set the public Google iOS client ID}"
+          APP_VERSION="$(awk '$1 == "version:" {print $2; exit}' pubspec.yaml)"
+          test -n "$APP_VERSION"
+          printf 'APP_VERSION=%s\n' "$APP_VERSION" >> "$CM_ENV"
       - name: Set up local.properties
         script: |
-          echo "flutter.sdk=$HOME/programs/flutter" > "$CM_BUILD_DIR/android/local.properties"
+          set -euo pipefail
+          printf 'flutter.sdk=%s\n' "${FLUTTER_ROOT:-$HOME/programs/flutter}" > "$CM_BUILD_DIR/android/local.properties"
       - name: Install dependencies
         script: |
+          set -euo pipefail
           flutter pub get
+      - name: Validate public Google sign-in configuration
+        script: |
+          set -euo pipefail
+          dart run tool/configure_google_sign_in.dart
       - name: Analyze
         script: |
+          set -euo pipefail
           flutter analyze
       - name: Run tests
         script: |
-          flutter test
+          set -euo pipefail
+          flutter test --no-pub
       - name: Configure Android signing
         script: |
-          if [ -z "$CM_KEYSTORE" ] || [ -z "$CM_KEYSTORE_PASSWORD" ] || [ -z "$CM_KEY_ALIAS" ] || [ -z "$CM_KEY_PASSWORD" ]; then
+          set -euo pipefail
+          if [ -z "${CM_KEYSTORE:-}" ] || [ -z "${CM_KEYSTORE_PASSWORD:-}" ] || [ -z "${CM_KEY_ALIAS:-}" ] || [ -z "${CM_KEY_PASSWORD:-}" ]; then
             echo "Missing Android signing variables. Set CM_KEYSTORE, CM_KEYSTORE_PASSWORD, CM_KEY_ALIAS, and CM_KEY_PASSWORD in Codemagic."
             exit 1
           fi
@@ -45,12 +65,15 @@ workflows:
           } > "$CM_BUILD_DIR/android/key.properties"
       - name: Build Android artifacts
         script: |
-          flutter build apk --release \
+          set -euo pipefail
+          flutter build apk --release --no-pub \
+            --dart-define=APP_VERSION="$APP_VERSION" \
             --dart-define=API_BASE_URL="$API_BASE_URL" \
             --dart-define=GOOGLE_SERVER_CLIENT_ID="${GOOGLE_SERVER_CLIENT_ID:-}" \
             --dart-define=GOOGLE_IOS_CLIENT_ID="${GOOGLE_IOS_CLIENT_ID:-}" \
             --dart-define=ONESIGNAL_APP_ID="$ONESIGNAL_APP_ID"
-          flutter build appbundle --release \
+          flutter build appbundle --release --no-pub \
+            --dart-define=APP_VERSION="$APP_VERSION" \
             --dart-define=API_BASE_URL="$API_BASE_URL" \
             --dart-define=GOOGLE_SERVER_CLIENT_ID="${GOOGLE_SERVER_CLIENT_ID:-}" \
             --dart-define=GOOGLE_IOS_CLIENT_ID="${GOOGLE_IOS_CLIENT_ID:-}" \
@@ -82,26 +105,47 @@ workflows:
         - ~/.pub-cache
         - ~/Library/Caches/CocoaPods
     scripts:
+      - name: Validate rider configuration and prepare version metadata
+        script: |
+          set -euo pipefail
+          cd "$CM_BUILD_DIR"
+          : "${API_BASE_URL:?Set the rider backend URL}"
+          : "${ONESIGNAL_APP_ID:?Set the public rider OneSignal app ID}"
+          : "${GOOGLE_SERVER_CLIENT_ID:?Set the public Google server client ID}"
+          : "${GOOGLE_IOS_CLIENT_ID:?Set the public Google iOS client ID}"
+          APP_VERSION="$(awk '$1 == "version:" {print $2; exit}' pubspec.yaml)"
+          test -n "$APP_VERSION"
+          printf 'APP_VERSION=%s\n' "$APP_VERSION" >> "$CM_ENV"
       - name: Install dependencies
         script: |
+          set -euo pipefail
           flutter pub get
+      - name: Prepare Google iOS callback configuration
+        script: |
+          set -euo pipefail
+          dart run tool/configure_google_sign_in.dart
       - name: Install pods
         script: |
+          set -euo pipefail
           cd ios
           pod install
       - name: Configure App Store signing
         script: |
+          set -euo pipefail
           xcode-project use-profiles
       - name: Analyze
         script: |
+          set -euo pipefail
           flutter analyze
       - name: Run tests
         script: |
-          flutter test
+          set -euo pipefail
+          flutter test --no-pub
       - name: Build signed IPA
         script: |
-          dart run tool/configure_google_sign_in.dart
-          flutter build ipa --release --export-method app-store \
+          set -euo pipefail
+          flutter build ipa --release --no-pub --export-method app-store \
+            --dart-define=APP_VERSION="$APP_VERSION" \
             --dart-define=API_BASE_URL="$API_BASE_URL" \
             --dart-define=GOOGLE_SERVER_CLIENT_ID="${GOOGLE_SERVER_CLIENT_ID:-}" \
             --dart-define=GOOGLE_IOS_CLIENT_ID="${GOOGLE_IOS_CLIENT_ID:-}" \

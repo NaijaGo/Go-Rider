@@ -21,10 +21,12 @@ class MapboxConfig {
           '?access_token=$_fallbackAccessToken';
 
   static void applyBackendConfig(Map<String, dynamic> data) {
-    _backendHasToken = data['hasToken'] == true;
     final tileUrl = data['tileUrl']?.toString();
-    if (tileUrl != null && tileUrl.trim().isNotEmpty) {
-      _backendTileUrl = tileUrl;
-    }
+    final uri = Uri.tryParse(tileUrl ?? '');
+    _backendHasToken =
+        data['hasToken'] == true &&
+        uri?.scheme == 'https' &&
+        uri?.host == 'api.mapbox.com';
+    _backendTileUrl = _backendHasToken ? tileUrl : null;
   }
 }

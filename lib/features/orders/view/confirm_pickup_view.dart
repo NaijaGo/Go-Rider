@@ -27,19 +27,25 @@ class _ConfirmPickupViewState extends State<ConfirmPickupView> {
   bool isSubmitting = false;
 
   Future<void> pickGoodsImage() async {
-    final image = await picker.pickImage(
-      source: ImageSource.camera,
-      imageQuality: 80,
-    );
-
-    if (image == null) return;
-
-    setState(() {
-      selectedImage = image;
-    });
+    if (isSubmitting) return;
+    try {
+      final image = await picker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 80,
+      );
+      if (!mounted || image == null) return;
+      setState(() => selectedImage = image);
+    } catch (_) {
+      if (!mounted) return;
+      Get.snackbar(
+        'Camera unavailable',
+        'Allow camera access in device settings and try again.',
+      );
+    }
   }
 
   Future<void> submitPickupConfirmation() async {
+    if (isSubmitting) return;
     final goodsType = goodsTypeController.text.trim();
     final verificationCode = verificationCodeController.text.trim();
 
@@ -64,6 +70,7 @@ class _ConfirmPickupViewState extends State<ConfirmPickupView> {
       verificationCode,
     );
 
+    if (!mounted) return;
     setState(() => isSubmitting = false);
 
     if (!confirmed) return;
@@ -75,7 +82,7 @@ class _ConfirmPickupViewState extends State<ConfirmPickupView> {
       colorText: Colors.white,
     );
 
-    Get.back();
+    if (Navigator.of(context).canPop()) Navigator.of(context).pop();
   }
 
   @override
@@ -304,13 +311,13 @@ class _PickupHeader extends StatelessWidget {
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [AppTheme.primary, Color(0xFF0B335C)],
+          colors: [AppTheme.primary, AppTheme.deepBlue],
         ),
         boxShadow: [
           BoxShadow(
-            color: AppTheme.primary.withValues(alpha: 0.18),
-            blurRadius: 28,
-            offset: const Offset(0, 14),
+            color: AppTheme.primary.withValues(alpha: 0.07),
+            blurRadius: 18,
+            offset: const Offset(0, 6),
           ),
         ],
       ),
@@ -363,7 +370,9 @@ class _GoodsImagePicker extends StatelessWidget {
       borderRadius: BorderRadius.circular(18),
       child: Container(
         width: double.infinity,
-        height: hasImage ? 210 : 140,
+        height: hasImage ? 210 : null,
+        constraints: const BoxConstraints(minHeight: 140),
+        padding: hasImage ? EdgeInsets.zero : const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: const Color(0xFFF8FAFC),
           borderRadius: BorderRadius.circular(18),
@@ -378,6 +387,7 @@ class _GoodsImagePicker extends StatelessWidget {
 
   Widget _emptyUpload() {
     return const Column(
+      mainAxisSize: MainAxisSize.min,
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Icon(Icons.add_a_photo_outlined, color: AppTheme.secondary, size: 34),
@@ -392,6 +402,7 @@ class _GoodsImagePicker extends StatelessWidget {
         SizedBox(height: 4),
         Text(
           'Take a clear photo of the goods picked',
+          textAlign: TextAlign.center,
           style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
         ),
       ],

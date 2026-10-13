@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import '../storage/app_storage.dart';
 
 class ApiClient {
+  static void Function(DioException)? onProtectedError;
   static String get _defaultBaseUrl {
     if (kIsWeb) return 'http://localhost:5000/api';
 
@@ -37,7 +38,25 @@ class ApiClient {
         )
         ..interceptors.add(
           InterceptorsWrapper(
+            onError: (error, handler) {
+              final path = error.requestOptions.path;
+              final publicAuth = [
+                '/riders/login',
+                '/riders/google',
+                '/riders/register',
+                '/riders/forgot-password',
+              ].any(path.endsWith);
+              if (!publicAuth &&
+                  error.requestOptions.extra['agreementRequest'] != true &&
+                  error.requestOptions.extra['skipAuth'] != true) {
+                onProtectedError?.call(error);
+              }
+              handler.next(error);
+            },
             onRequest: (options, handler) {
+              if (options.extra['explicitAuth'] == true) {
+                return handler.next(options);
+              }
               if (options.extra['skipAuth'] == true) {
                 options.headers.remove('Authorization');
                 return handler.next(options);

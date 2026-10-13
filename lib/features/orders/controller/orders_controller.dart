@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import '../../../core/api/api_helpers.dart';
 import '../../../core/storage/app_storage.dart';
 import '../../../routes/app_routes.dart';
+import '../../agreement/controller/rider_agreement_controller.dart';
 import '../model/rider_order.dart';
 import '../service/rider_api.dart';
 import 'delivery_controller.dart';
@@ -19,7 +20,9 @@ class OrdersController extends GetxController {
   }
 
   Future<void> loadAssignedOrders() async {
-    if (!_hasToken) {
+    if (!_hasToken ||
+        (Get.isRegistered<RiderAgreementController>() &&
+            !Get.find<RiderAgreementController>().confirmed.value)) {
       assignedOrders.clear();
       return;
     }
@@ -36,10 +39,13 @@ class OrdersController extends GetxController {
   }
 
   Future<void> acceptOrder(RiderOrder order) async {
-    if (!_hasToken) return;
-
+    if (!_hasToken || isLoading.value) return;
+    isLoading.value = true;
     try {
-      isLoading.value = true;
+      if (Get.isRegistered<RiderAgreementController>() &&
+          !await Get.find<RiderAgreementController>().ensureAccepted()) {
+        return;
+      }
       await RiderApi.claimOrder(order.id);
 
       Get.find<DeliveryController>().setActiveOrder(order);

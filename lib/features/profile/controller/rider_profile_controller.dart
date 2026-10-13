@@ -7,8 +7,9 @@ import '../../orders/service/rider_api.dart';
 
 class RiderProfileController extends GetxController {
   // Account status
-  final approvalStatus = 'Approved Rider'.obs;
-  final statusDescription = 'You can receive and complete delivery jobs.'.obs;
+  final approvalStatus = 'Checking rider status'.obs;
+  final statusDescription =
+      'Your account status will appear after your profile loads.'.obs;
 
   // Locked personal information
   final fullName = 'Not provided'.obs;

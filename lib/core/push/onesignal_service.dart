@@ -3,7 +3,10 @@ import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:onesignal_flutter/onesignal_flutter.dart';
 
-import '../../routes/app_routes.dart';
+import 'rider_alerts.dart';
+import '../../features/agreement/controller/rider_agreement_controller.dart';
+import '../../features/orders/controller/orders_controller.dart';
+import '../../features/orders/controller/delivery_controller.dart';
 
 class OneSignalService {
   static const String _appId = String.fromEnvironment(
@@ -38,13 +41,18 @@ class OneSignalService {
       );
       OneSignal.initialize(_appId);
       OneSignal.Notifications.addForegroundWillDisplayListener((event) {
-        event.preventDefault();
-        event.notification.display();
+        final data = event.notification.additionalData ?? {};
+        if (RiderAlertPolicy.isJob(data) && RiderAlerts.canHandleIncoming) {
+          event.preventDefault();
+          RiderAlerts.incoming(data);
+          _refreshOrderScreens();
+        } else {
+          event.notification.display();
+        }
       });
       OneSignal.Notifications.addClickListener((event) {
         final data = event.notification.additionalData ?? {};
-        debugPrint('Rider notification clicked: $data');
-        _queueOrOpenNotificationDestination(data);
+        handleNotificationTap(data);
       });
       _initialized = true;
     } catch (error) {
@@ -53,6 +61,16 @@ class OneSignalService {
   }
 
   static Map<String, Object?> diagnostics() {
+    if (!_initialized) {
+      return {
+        'configured': isConfigured,
+        'appIdSuffix': appIdSuffix,
+        'permission': false,
+        'optedIn': false,
+        'subscriptionId': null,
+        'tokenPresent': false,
+      };
+    }
     final subscription = OneSignal.User.pushSubscription;
     return {
       'configured': isConfigured,
@@ -62,6 +80,14 @@ class OneSignalService {
       'subscriptionId': subscription.id,
       'tokenPresent': (subscription.token ?? '').isNotEmpty,
     };
+  }
+
+  static bool get alertsConnected {
+    final status = diagnostics();
+    return status['permission'] == true &&
+        status['optedIn'] == true &&
+        (status['subscriptionId']?.toString().isNotEmpty ?? false) &&
+        status['tokenPresent'] == true;
   }
 
   static Future<void> requestPermission() async {
@@ -118,6 +144,7 @@ class OneSignalService {
   }
 
   static Future<void> logout() async {
+    await _notificationStorage.remove(_pendingDestinationKey);
     try {
       await OneSignal.logout();
     } catch (error) {
@@ -125,70 +152,50 @@ class OneSignalService {
     }
   }
 
+  static bool _consumingDestination = false;
+
+  static bool get _canNavigate => RiderAlerts.canNavigate;
+
   static Future<void> consumePendingDestination() async {
+    if (_consumingDestination) return;
+    if (Get.isRegistered<RiderAgreementController>() &&
+        !await Get.find<RiderAgreementController>().ensureAccepted()) {
+      return;
+    }
+    if (!_canNavigate) return;
     final pending = _notificationStorage.read<dynamic>(_pendingDestinationKey);
     if (pending is! Map) return;
-    await _notificationStorage.remove(_pendingDestinationKey);
-    await Future<void>.delayed(const Duration(milliseconds: 250));
-    _openNotificationDestination(Map<String, dynamic>.from(pending));
+    _consumingDestination = true;
+    try {
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      if (!_canNavigate) return;
+      final data = Map<String, dynamic>.from(pending);
+      _refreshOrderScreens();
+      final destination = RiderAlerts.destination(data);
+      if (Get.currentRoute != destination) Get.toNamed(destination);
+      await _notificationStorage.remove(_pendingDestinationKey);
+    } finally {
+      _consumingDestination = false;
+    }
   }
 
-  static void _queueOrOpenNotificationDestination(Map<String, dynamic> data) {
-    _notificationStorage.write(_pendingDestinationKey, data);
-    if (Get.context == null) return;
-    Future<void>.delayed(
-      const Duration(milliseconds: 250),
-      consumePendingDestination,
-    );
-  }
-
-  static void _openNotificationDestination(Map<String, dynamic> data) {
-    final type = data['type']?.toString() ?? '';
-    final hasOrder = (data['orderId']?.toString() ?? '').isNotEmpty;
-    final arguments = <String, dynamic>{
-      if (hasOrder) 'orderId': data['orderId'].toString(),
-      if ((data['shipmentId']?.toString() ?? '').isNotEmpty)
+  static Future<void> handleNotificationTap(Map<String, dynamic> data) async {
+    // Keep the destination until authentication and approval are complete.
+    await _notificationStorage.write(_pendingDestinationKey, {
+      'type': data['type']?.toString() ?? '',
+      if (data['orderId'] != null) 'orderId': data['orderId'].toString(),
+      if (data['shipmentId'] != null)
         'shipmentId': data['shipmentId'].toString(),
-    };
+    });
+    await consumePendingDestination();
+  }
 
-    if (type == 'pickup_required' ||
-        type == 'arrived_at_vendor' ||
-        type == 'confirm_pickup') {
-      Get.toNamed(AppRoutes.confirmPickup, arguments: arguments);
-      return;
+  static void _refreshOrderScreens() {
+    if (Get.isRegistered<OrdersController>()) {
+      Get.find<OrdersController>().loadAssignedOrders();
     }
-
-    if (type == 'delivery_required' ||
-        type == 'arrived_at_customer' ||
-        type == 'confirm_delivery') {
-      Get.toNamed(AppRoutes.confirmDelivered, arguments: arguments);
-      return;
+    if (Get.isRegistered<DeliveryController>()) {
+      Get.find<DeliveryController>().loadActiveDelivery();
     }
-
-    if (type == 'rider_order_assigned' ||
-        type == 'delivery_offer' ||
-        type == 'order_assigned') {
-      Get.toNamed(
-        type == 'order_assigned'
-            ? AppRoutes.activeDelivery
-            : AppRoutes.assignedOrders,
-        arguments: arguments.isEmpty ? null : arguments,
-      );
-      return;
-    }
-
-    if (type.contains('withdraw') ||
-        type.contains('earning') ||
-        type.contains('payout')) {
-      Get.toNamed(AppRoutes.earnings, arguments: arguments);
-      return;
-    }
-
-    if (type.contains('delivery') || type.contains('order')) {
-      Get.toNamed(AppRoutes.activeDelivery, arguments: arguments);
-      return;
-    }
-
-    Get.toNamed(AppRoutes.notifications);
   }
 }

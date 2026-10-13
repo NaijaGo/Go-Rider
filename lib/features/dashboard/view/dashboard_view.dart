@@ -3,6 +3,9 @@ import 'package:get/get.dart';
 
 import '../../../core/api/api_helpers.dart';
 import '../../../core/socket/socket_service.dart';
+import '../../../core/push/onesignal_service.dart';
+import '../../agreement/controller/rider_agreement_controller.dart';
+import 'daily_bonus_card.dart';
 import '../../../core/storage/app_storage.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_background.dart';
@@ -15,7 +18,8 @@ import '../../orders/controller/delivery_controller.dart';
 import '../../orders/service/rider_api.dart';
 
 class DashboardView extends StatefulWidget {
-  const DashboardView({super.key});
+  const DashboardView({super.key, this.onlineStatusSaver});
+  final Future<void> Function(bool)? onlineStatusSaver;
 
   @override
   State<DashboardView> createState() => _DashboardViewState();
@@ -29,6 +33,10 @@ class _DashboardViewState extends State<DashboardView> {
   int completedDeliveries = 0;
   int activeDeliveries = 0;
   int _statusRequestVersion = 0;
+  String dashboardError = '';
+  bool _dashboardLoaded = false;
+  bool _dashboardFetching = true;
+  int _dashboardVersion = 0;
   Worker? _orderRefreshWorker;
   Worker? _activeOrderWorker;
 
@@ -37,6 +45,9 @@ class _DashboardViewState extends State<DashboardView> {
     super.initState();
     _bindLiveDashboardRefresh();
     _loadDashboard();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) OneSignalService.consumePendingDestination();
+    });
   }
 
   @override
@@ -65,9 +76,12 @@ class _DashboardViewState extends State<DashboardView> {
   }
 
   Future<void> _loadDashboard() async {
+    if (isLoading) return;
+    final version = ++_dashboardVersion;
+    if (mounted) setState(() => _dashboardFetching = true);
     try {
       final data = await RiderApi.dashboard();
-      if (!mounted) return;
+      if (!mounted || version != _dashboardVersion) return;
       final online = data['isAvailable'] == true && data['isActive'] == true;
       final dashboardActiveDeliveries = asDouble(
         data['activeDeliveries'],
@@ -78,6 +92,8 @@ class _DashboardViewState extends State<DashboardView> {
           ? 1
           : 0;
       setState(() {
+        dashboardError = '';
+        _dashboardLoaded = true;
         todayEarnings = asDouble(data['todayEarnings']);
         completedDeliveries = asDouble(data['completedDeliveries']).toInt();
         activeDeliveries = dashboardActiveDeliveries > localActiveDeliveries
@@ -85,47 +101,76 @@ class _DashboardViewState extends State<DashboardView> {
             : localActiveDeliveries;
         isOnline = online;
       });
-      await AppStorage.saveRiderOnline(online);
+      await (widget.onlineStatusSaver ?? AppStorage.saveRiderOnline)(online);
       if (Get.isRegistered<NotificationController>()) {
         await Get.find<NotificationController>().setOnlineStatus(online);
       }
       if (Get.isRegistered<RiderLocationController>()) {
         await Get.find<RiderLocationController>().syncWithOnlineStatus(online);
       }
-    } catch (_) {
-      // Dashboard keeps zeroed state until the backend is reachable.
+    } catch (error) {
+      if (!mounted || version != _dashboardVersion) return;
+      setState(
+        () => dashboardError = apiMessage(
+          error,
+          'Dashboard unavailable. Pull to refresh or try again.',
+        ),
+      );
+    } finally {
+      if (mounted && version == _dashboardVersion) {
+        setState(() => _dashboardFetching = false);
+      }
     }
   }
 
   Future<void> _setOnline(bool value) async {
+    if (isLoading || !_dashboardLoaded) return;
+    _dashboardVersion++;
+    setState(() {
+      isLoading = true;
+      _dashboardFetching = false;
+    });
+    try {
+      await _applyOnline(value);
+    } finally {
+      if (mounted) setState(() => isLoading = false);
+    }
+  }
+
+  Future<void> _applyOnline(bool value) async {
     final requestVersion = ++_statusRequestVersion;
-    final previousValue = isOnline;
 
     if (!value &&
         Get.isRegistered<DeliveryController>() &&
         Get.find<DeliveryController>().activeOrder.value != null) {
       final confirm = await Get.dialog<bool>(
-        AlertDialog(
-          title: const Text('Active delivery in progress'),
-          content: const Text(
-            'Going offline during an active delivery will notify admin. Continue?',
+        Builder(
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Active delivery in progress'),
+            content: const Text(
+              'Going offline during an active delivery will notify admin. Continue?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('Stay Online'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: const Text('Go Offline'),
+              ),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Get.back(result: false),
-              child: const Text('Stay Online'),
-            ),
-            ElevatedButton(
-              onPressed: () => Get.back(result: true),
-              child: const Text('Go Offline'),
-            ),
-          ],
         ),
       );
       if (confirm != true) return;
     }
 
     if (value) {
+      if (Get.isRegistered<RiderAgreementController>() &&
+          !await Get.find<RiderAgreementController>().ensureAccepted()) {
+        return;
+      }
       if (!mounted) return;
       final permissionGranted = await _locationPermissionService
           .requestForGoingOnline(context);
@@ -146,6 +191,7 @@ class _DashboardViewState extends State<DashboardView> {
     if (value && Get.isRegistered<RiderLocationController>()) {
       final location = await Get.find<RiderLocationController>()
           .refreshCurrentLocation(sendToServerWhenOnline: false);
+      if (!mounted) return;
       if (location == null) {
         Get.snackbar(
           'Location required',
@@ -155,62 +201,47 @@ class _DashboardViewState extends State<DashboardView> {
       }
     }
 
-    setState(() {
-      isLoading = true;
-      isOnline = value;
-    });
-    await AppStorage.saveRiderOnline(value);
-    if (Get.isRegistered<NotificationController>()) {
-      await Get.find<NotificationController>().setOnlineStatus(value);
-    }
-    if (Get.isRegistered<RiderLocationController>()) {
-      await Get.find<RiderLocationController>().syncWithOnlineStatus(value);
-    }
-    SocketService().emit('rider_status_update', {
-      'isAvailable': value,
-      'isActive': value,
-    });
-
+    if (!mounted) return;
     try {
+      // The backend confirms availability before local tracking or alerts change.
       final data = await RiderApi.updateAvailability(value);
       if (!mounted || requestVersion != _statusRequestVersion) return;
       final confirmedOnline =
           data['isAvailable'] == true && data['isActive'] == true;
-      if (confirmedOnline != isOnline) {
-        setState(() => isOnline = confirmedOnline);
-        await AppStorage.saveRiderOnline(confirmedOnline);
-        if (Get.isRegistered<NotificationController>()) {
-          await Get.find<NotificationController>().setOnlineStatus(
-            confirmedOnline,
-          );
-        }
-        if (Get.isRegistered<RiderLocationController>()) {
-          await Get.find<RiderLocationController>().syncWithOnlineStatus(
-            confirmedOnline,
-          );
-        }
-      }
-    } catch (e) {
-      if (!mounted || requestVersion != _statusRequestVersion) return;
-      setState(() => isOnline = previousValue);
-      await AppStorage.saveRiderOnline(previousValue);
+      setState(() => isOnline = confirmedOnline);
+      await (widget.onlineStatusSaver ?? AppStorage.saveRiderOnline)(
+        confirmedOnline,
+      );
       if (Get.isRegistered<NotificationController>()) {
-        await Get.find<NotificationController>().setOnlineStatus(previousValue);
+        await Get.find<NotificationController>().setOnlineStatus(
+          confirmedOnline,
+        );
       }
       if (Get.isRegistered<RiderLocationController>()) {
         await Get.find<RiderLocationController>().syncWithOnlineStatus(
-          previousValue,
+          confirmedOnline,
+        );
+      }
+      if (confirmedOnline && mounted && !OneSignalService.alertsConnected) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'You are online. Enable delivery alerts in Notifications so you can hear jobs while the app is in the background.',
+            ),
+          ),
         );
       }
       SocketService().emit('rider_status_update', {
-        'isAvailable': previousValue,
-        'isActive': previousValue,
+        'isAvailable': confirmedOnline,
+        'isActive': confirmedOnline,
       });
-      Get.snackbar('Error', apiMessage(e, 'Unable to update rider status'));
-    } finally {
-      if (mounted && requestVersion == _statusRequestVersion) {
-        setState(() => isLoading = false);
-      }
+    } catch (error) {
+      if (!mounted || requestVersion != _statusRequestVersion) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(apiMessage(error, 'Unable to update rider status')),
+        ),
+      );
     }
   }
 
@@ -221,154 +252,238 @@ class _DashboardViewState extends State<DashboardView> {
     return Scaffold(
       body: AppBackground(
         child: SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Obx(
-                  () => _DashboardTopBar(
-                    isOnline: isOnline,
-                    unreadCount: notificationController.unreadCount,
-                    onNotificationTap: () =>
-                        Get.toNamed(AppRoutes.notifications),
-                    onProfileTap: () => Get.toNamed(AppRoutes.profile),
-                  ),
-                ),
-
-                const SizedBox(height: 20),
-
-                _EarningsHeroCard(
-                  isOnline: isOnline,
-                  isLoading: isLoading,
-                  todayEarnings: todayEarnings,
-                  onToggle: _setOnline,
-                ),
-
-                const SizedBox(height: 18),
-
-                Row(
-                  children: [
-                    Expanded(
-                      child: _StatTile(
-                        title: 'Completed',
-                        value: completedDeliveries.toString(),
-                        icon: Icons.check_circle_outline,
-                      ),
+          child: RefreshIndicator(
+            onRefresh: _loadDashboard,
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Obx(
+                    () => _DashboardTopBar(
+                      isOnline: isOnline,
+                      unreadCount: notificationController.unreadCount,
+                      onNotificationTap: () =>
+                          Get.toNamed(AppRoutes.notifications),
+                      onProfileTap: () => Get.toNamed(AppRoutes.profile),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _StatTile(
-                        title: 'Active',
-                        value: activeDeliveries.toString(),
-                        icon: Icons.pending_actions,
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  _EarningsHeroCard(
+                    isOnline: isOnline,
+                    isLoading: isLoading || _dashboardFetching,
+                    canToggle: _dashboardLoaded,
+                    todayEarnings: todayEarnings,
+                    onToggle: _setOnline,
+                  ),
+
+                  const SizedBox(height: 16),
+                  if (Get.isRegistered<RiderAgreementController>())
+                    Obx(() {
+                      final agreement = Get.find<RiderAgreementController>();
+                      if (agreement.confirmed.value) {
+                        return const SizedBox.shrink();
+                      }
+                      return SectionCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Rider agreement verification is required before new delivery work.',
+                            ),
+                            TextButton(
+                              onPressed: () =>
+                                  Get.toNamed(AppRoutes.riderAgreement),
+                              child: const Text('Review rider agreement'),
+                            ),
+                            const Text(
+                              'An existing claimed delivery can still be completed.',
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                  const DailyBonusCard(),
+                  if (dashboardError.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    SectionCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            dashboardError,
+                            style: const TextStyle(color: AppTheme.textMuted),
+                          ),
+                          TextButton.icon(
+                            onPressed: _loadDashboard,
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('Retry dashboard'),
+                          ),
+                        ],
                       ),
                     ),
                   ],
-                ),
-
-                const SizedBox(height: 22),
-
-                const Text(
-                  'Quick Actions',
-                  style: TextStyle(
-                    color: AppTheme.textDark,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 12),
-
-                SectionCard(
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                    children: [
-                      _ActionTile(
-                        icon: Icons.assignment_outlined,
-                        title: 'Assigned Orders',
-                        subtitle: 'Accept or reject new delivery jobs',
-                        onTap: () => Get.toNamed(AppRoutes.assignedOrders),
-                      ),
-                      const Divider(height: 1),
-                      _ActionTile(
-                        icon: Icons.delivery_dining,
-                        title: 'Active Delivery',
-                        subtitle: 'View your current assigned order',
-                        onTap: () => Get.toNamed(AppRoutes.activeDelivery),
-                      ),
-                      const Divider(height: 1),
-                      _ActionTile(
-                        icon: Icons.account_balance_wallet_outlined,
-                        title: 'Earnings',
-                        subtitle: 'Track your balance and completed jobs',
-                        onTap: () => Get.toNamed(AppRoutes.earnings),
-                      ),
-                      const Divider(height: 1),
-                      _ActionTile(
-                        icon: Icons.notifications_none,
-                        title: 'Notifications',
-                        subtitle: 'View order alerts and admin messages',
-                        badgeCount: notificationController.unreadCount,
-                        onTap: () => Get.toNamed(AppRoutes.notifications),
-                      ),
-                      const Divider(height: 1),
-                      _ActionTile(
-                        icon: Icons.person_outline,
-                        title: 'Profile',
-                        subtitle: 'Manage rider details and documents',
-                        onTap: () => Get.toNamed(AppRoutes.profile),
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 22),
-
-                const Text(
-                  'Current Status',
-                  style: TextStyle(
-                    color: AppTheme.textDark,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 12),
-
-                SectionCard(
-                  child: Row(
-                    children: [
-                      Container(
-                        height: 46,
-                        width: 46,
-                        decoration: BoxDecoration(
-                          color: isOnline
-                              ? AppTheme.green.withValues(alpha: 0.12)
-                              : Colors.orange.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(15),
-                        ),
-                        child: Icon(
-                          isOnline ? Icons.wifi_tethering : Icons.wifi_off,
-                          color: isOnline ? AppTheme.green : Colors.orange,
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Text(
-                          isOnline
-                              ? 'You are available to receive delivery requests.'
-                              : 'You are offline. Turn online when you are ready to work.',
-                          style: const TextStyle(
-                            color: AppTheme.textDark,
-                            fontSize: 14,
-                            height: 1.45,
-                            fontWeight: FontWeight.w600,
+                  if (Get.isRegistered<RiderLocationController>())
+                    Obx(() {
+                      final location = Get.find<RiderLocationController>();
+                      final error = location.locationError.value;
+                      if (!isOnline || error.isEmpty) {
+                        return const SizedBox.shrink();
+                      }
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 16),
+                        child: SectionCard(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                error,
+                                style: const TextStyle(
+                                  color: AppTheme.textMuted,
+                                ),
+                              ),
+                              TextButton.icon(
+                                onPressed: location.startOnlineLocationUpdates,
+                                icon: const Icon(Icons.my_location),
+                                label: const Text('Retry live location'),
+                              ),
+                            ],
                           ),
                         ),
+                      );
+                    }),
+                  const SizedBox(height: 18),
+
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _StatTile(
+                          title: 'Completed',
+                          value: _dashboardLoaded
+                              ? completedDeliveries.toString()
+                              : '\u2014',
+                          icon: Icons.check_circle_outline,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _StatTile(
+                          title: 'Active',
+                          value: _dashboardLoaded
+                              ? activeDeliveries.toString()
+                              : '\u2014',
+                          icon: Icons.pending_actions,
+                        ),
                       ),
                     ],
                   ),
-                ),
-              ],
+
+                  const SizedBox(height: 22),
+
+                  const Text(
+                    'Quick Actions',
+                    style: TextStyle(
+                      color: AppTheme.textDark,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  SectionCard(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      children: [
+                        _ActionTile(
+                          icon: Icons.assignment_outlined,
+                          title: 'Assigned Orders',
+                          subtitle: 'Accept or reject new delivery jobs',
+                          onTap: () => Get.toNamed(AppRoutes.assignedOrders),
+                        ),
+                        const Divider(height: 1),
+                        _ActionTile(
+                          icon: Icons.delivery_dining,
+                          title: 'Active Delivery',
+                          subtitle: 'View your current assigned order',
+                          onTap: () => Get.toNamed(AppRoutes.activeDelivery),
+                        ),
+                        const Divider(height: 1),
+                        _ActionTile(
+                          icon: Icons.account_balance_wallet_outlined,
+                          title: 'Earnings',
+                          subtitle: 'Track your balance and completed jobs',
+                          onTap: () => Get.toNamed(AppRoutes.earnings),
+                        ),
+                        const Divider(height: 1),
+                        _ActionTile(
+                          icon: Icons.notifications_none,
+                          title: 'Notifications',
+                          subtitle: 'View order alerts and admin messages',
+                          badgeCount: notificationController.unreadCount,
+                          onTap: () => Get.toNamed(AppRoutes.notifications),
+                        ),
+                        const Divider(height: 1),
+                        _ActionTile(
+                          icon: Icons.person_outline,
+                          title: 'Profile',
+                          subtitle: 'Manage rider details and documents',
+                          onTap: () => Get.toNamed(AppRoutes.profile),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 22),
+
+                  const Text(
+                    'Current Status',
+                    style: TextStyle(
+                      color: AppTheme.textDark,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  SectionCard(
+                    child: Row(
+                      children: [
+                        Container(
+                          height: 46,
+                          width: 46,
+                          decoration: BoxDecoration(
+                            color: isOnline
+                                ? AppTheme.green.withValues(alpha: 0.12)
+                                : Colors.orange.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(15),
+                          ),
+                          child: Icon(
+                            isOnline ? Icons.wifi_tethering : Icons.wifi_off,
+                            color: isOnline ? AppTheme.green : Colors.orange,
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Text(
+                            isOnline
+                                ? 'You are available to receive delivery requests.'
+                                : 'You are offline. Turn online when you are ready to work.',
+                            style: const TextStyle(
+                              color: AppTheme.textDark,
+                              fontSize: 14,
+                              height: 1.45,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -511,12 +626,14 @@ class _DashboardTopBar extends StatelessWidget {
 class _EarningsHeroCard extends StatelessWidget {
   final bool isOnline;
   final bool isLoading;
+  final bool canToggle;
   final double todayEarnings;
   final ValueChanged<bool> onToggle;
 
   const _EarningsHeroCard({
     required this.isOnline,
     required this.isLoading,
+    required this.canToggle,
     required this.todayEarnings,
     required this.onToggle,
   });
@@ -532,13 +649,13 @@ class _EarningsHeroCard extends StatelessWidget {
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [AppTheme.primary, Color(0xFF0B335C)],
+          colors: [AppTheme.primary, AppTheme.deepBlue],
         ),
         boxShadow: [
           BoxShadow(
-            color: AppTheme.primary.withValues(alpha: 0.18),
-            blurRadius: 28,
-            offset: const Offset(0, 14),
+            color: AppTheme.primary.withValues(alpha: 0.07),
+            blurRadius: 18,
+            offset: const Offset(0, 6),
           ),
         ],
       ),
@@ -554,19 +671,23 @@ class _EarningsHeroCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          Text(
-            '₦${todayEarnings.toStringAsFixed(2)}',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 34,
-              fontWeight: FontWeight.w900,
-              letterSpacing: -0.8,
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              canToggle ? '₦${todayEarnings.toStringAsFixed(2)}' : '—',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 34,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -0.8,
+              ),
             ),
           ),
           const SizedBox(height: 18),
           GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: () => onToggle(!isOnline),
+            onTap: isLoading || !canToggle ? null : () => onToggle(!isOnline),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
@@ -586,7 +707,13 @@ class _EarningsHeroCard extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          isOnline ? 'Online and ready' : 'Offline',
+                          isLoading
+                              ? 'Checking availability...'
+                              : !canToggle
+                              ? 'Status unavailable'
+                              : isOnline
+                              ? 'Online and ready'
+                              : 'Offline',
                           style: const TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.w800,
@@ -594,7 +721,9 @@ class _EarningsHeroCard extends StatelessWidget {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          isOnline
+                          isLoading
+                              ? 'Please wait'
+                              : isOnline
                               ? 'Tap to go offline'
                               : 'Tap to receive orders',
                           style: const TextStyle(
@@ -620,7 +749,7 @@ class _EarningsHeroCard extends StatelessWidget {
                     ),
                   Switch(
                     value: isOnline,
-                    onChanged: onToggle,
+                    onChanged: isLoading || !canToggle ? null : onToggle,
                     activeThumbColor: AppTheme.green,
                     inactiveThumbColor: Colors.white,
                   ),

@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 
 class AppTheme {
-  static const Color primary = Color(0xFF071A2F);
-  static const Color secondary = Color(0xFF0EA5E9);
-  static const Color green = Color(0xFF16A34A);
-  static const Color background = Color(0xFFF4F7FB);
+  static const Color primary = Color(0xFF365D9B);
+  static const Color secondary = Color(0xFF5274A8);
+  static const Color deepBlue = Color(0xFF1D2D47);
+  static const Color green = Color(0xFF237854);
+  static const Color pickup = Color(0xFF986522);
+  static const Color softBlue = Color(0xFFF0F4FA);
+  static const Color border = Color(0xFFE2E8F2);
+  static const Color background = Color(0xFFF7F9FD);
   static const Color card = Colors.white;
-  static const Color textDark = Color(0xFF0F172A);
-  static const Color textMuted = Color(0xFF64748B);
+  static const Color textDark = Color(0xFF182238);
+  static const Color textMuted = Color(0xFF5E6A7F);
 
   static ThemeData get lightTheme {
     return ThemeData(
@@ -18,18 +22,22 @@ class AppTheme {
       colorScheme: ColorScheme.fromSeed(
         seedColor: secondary,
         primary: primary,
+        onPrimary: Colors.white,
         secondary: secondary,
+        onSecondary: Colors.white,
         surface: card,
       ),
       appBarTheme: const AppBarTheme(
-        backgroundColor: primary,
-        foregroundColor: Colors.white,
-        centerTitle: true,
+        backgroundColor: card,
+        foregroundColor: textDark,
+        surfaceTintColor: Colors.transparent,
+        scrolledUnderElevation: 0,
+        centerTitle: false,
         elevation: 0,
         titleTextStyle: TextStyle(
           fontSize: 18,
           fontWeight: FontWeight.w700,
-          color: Colors.white,
+          color: textDark,
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
@@ -55,11 +63,15 @@ class AppTheme {
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: green,
+          backgroundColor: primary,
           foregroundColor: Colors.white,
           elevation: 0,
-          minimumSize: const Size(double.infinity, 54),
-          textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+          minimumSize: const Size(64, 52),
+          textStyle: const TextStyle(
+            fontFamily: 'Roboto',
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+          ),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
@@ -68,9 +80,13 @@ class AppTheme {
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: primary,
-          minimumSize: const Size(double.infinity, 54),
+          minimumSize: const Size(64, 52),
           side: const BorderSide(color: Color(0xFFCBD5E1)),
-          textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+          textStyle: const TextStyle(
+            fontFamily: 'Roboto',
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+          ),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
@@ -79,7 +95,11 @@ class AppTheme {
       cardTheme: CardThemeData(
         color: Colors.white,
         elevation: 0,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          side: const BorderSide(color: border),
+          borderRadius: BorderRadius.circular(18),
+        ),
       ),
     );
   }

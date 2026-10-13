@@ -25,13 +25,13 @@ class PrimaryHeader extends StatelessWidget {
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [AppTheme.primary, Color(0xFF0B335C)],
+          colors: [AppTheme.primary, AppTheme.deepBlue],
         ),
         boxShadow: [
           BoxShadow(
-            color: AppTheme.primary.withValues(alpha: 0.22),
-            blurRadius: 24,
-            offset: const Offset(0, 12),
+            color: AppTheme.primary.withValues(alpha: 0.07),
+            blurRadius: 18,
+            offset: const Offset(0, 6),
           ),
         ],
       ),

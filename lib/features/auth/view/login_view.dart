@@ -109,6 +109,9 @@ class LoginView extends StatelessWidget {
                       const SizedBox(height: 16),
                       Obx(
                         () => ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            minimumSize: const Size(double.infinity, 52),
+                          ),
                           onPressed: controller.isLoading.value
                               ? null
                               : controller.login,

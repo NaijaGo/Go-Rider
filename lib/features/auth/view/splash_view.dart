@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 
 import '../../../core/storage/app_storage.dart';
 import '../../../core/push/onesignal_service.dart';
+import '../../agreement/controller/rider_agreement_controller.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../routes/app_routes.dart';
 
@@ -22,15 +23,38 @@ class _SplashViewState extends State<SplashView> {
 
   Future<void> _checkAuth() async {
     await Future.delayed(const Duration(seconds: 2));
+    if (!mounted) return;
 
     final token = AppStorage.token;
     final status = AppStorage.riderStatus;
 
-    if (token == null || token.isEmpty) {
+    if ((token == null || token.isEmpty) &&
+        (AppStorage.agreementToken?.isNotEmpty ?? false)) {
+      Get.offAllNamed(AppRoutes.riderAgreement);
+    } else if (token == null || token.isEmpty) {
       Get.offAllNamed(AppRoutes.login);
     } else if (status != 'approved') {
+      if (Get.isRegistered<RiderAgreementController>() &&
+          !await Get.find<RiderAgreementController>().ensureAccepted(
+            navigate: false,
+          )) {
+        if (mounted && AppStorage.token != null) {
+          Get.offAllNamed(AppRoutes.riderAgreement);
+        }
+        return;
+      }
       Get.offAllNamed(AppRoutes.pendingApproval);
     } else {
+      if (Get.isRegistered<RiderAgreementController>() &&
+          !await Get.find<RiderAgreementController>().ensureAccepted(
+            navigate: false,
+          )) {
+        if (mounted && AppStorage.token != null) {
+          Get.offAllNamed(AppRoutes.riderAgreement);
+        }
+        return;
+      }
+      if (!mounted) return;
       Get.offAllNamed(AppRoutes.dashboard);
       await OneSignalService.consumePendingDestination();
     }
@@ -45,7 +69,7 @@ class _SplashViewState extends State<SplashView> {
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [AppTheme.primary, Color(0xFF0B335C), Color(0xFF071A2F)],
+            colors: [AppTheme.primary, AppTheme.deepBlue, AppTheme.deepBlue],
           ),
         ),
         child: Center(

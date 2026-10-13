@@ -1,9 +1,10 @@
 import 'dart:async';
 
-import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 
 import '../../../core/api/api_helpers.dart';
+import '../../../core/push/rider_alerts.dart';
+import '../../agreement/controller/rider_agreement_controller.dart';
 import '../../../core/storage/app_storage.dart';
 import '../../../core/socket/socket_service.dart';
 import '../../orders/controller/delivery_controller.dart';
@@ -124,15 +125,28 @@ class NotificationController extends GetxController {
     ]) {
       _socketService.off(event);
       _socketService.on(event, (payload) {
-        unawaited(_playUrgentAlert());
+        final data = payload is Map
+            ? Map<String, dynamic>.from(payload)
+            : <String, dynamic>{};
+        RiderAlerts.incoming({...data, 'type': data['type'] ?? event});
         loadNotifications(showLoading: false);
         _refreshOrders(payload);
       });
     }
 
+    _socketService.off('rider_agreement_required');
+    _socketService.on('rider_agreement_required', (_) {
+      if (Get.isRegistered<RiderAgreementController>()) {
+        Get.find<RiderAgreementController>().requireReview();
+      }
+      setOnlineStatus(false);
+    });
+
     _socketService.off('admin_message');
     _socketService.on('admin_message', (_) {
-      unawaited(_playUrgentAlert());
+      if (RiderAlerts.sessionReady && RiderAlerts.foreground) {
+        unawaited(RiderAlerts.play());
+      }
       loadNotifications(showLoading: false);
     });
   }
@@ -201,18 +215,6 @@ class NotificationController extends GetxController {
         type == 'rider_order_assigned' ||
         type == 'order_assigned' ||
         data['orderId'] != null;
-  }
-
-  Future<void> _playUrgentAlert() async {
-    try {
-      await SystemSound.play(SystemSoundType.alert);
-      await HapticFeedback.heavyImpact();
-      await Future<void>.delayed(const Duration(milliseconds: 320));
-      await SystemSound.play(SystemSoundType.alert);
-      await HapticFeedback.vibrate();
-    } catch (_) {
-      // Some targets do not support alert sounds or haptics.
-    }
   }
 
   List<RiderNotification> _dedupeNotifications(List<RiderNotification> items) {

@@ -61,8 +61,11 @@ class _GoogleLoginViewState extends State<GoogleLoginView> {
               ));
       if (!mounted) return;
       if (data['httpStatus'] == 200) {
-        if (data['token'] is! String ||
-            (data['token'] as String).isEmpty ||
+        final sessionToken = data['status'] == 'pending'
+            ? data['agreementToken']
+            : data['token'];
+        if (sessionToken is! String ||
+            sessionToken.isEmpty ||
             data['_id'] == null) {
           throw const FormatException();
         }
