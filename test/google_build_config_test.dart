@@ -3,6 +3,47 @@ import 'package:flutter_test/flutter_test.dart';
 import '../tool/configure_google_sign_in.dart';
 
 void main() {
+  test('combined default workflow prepares both signed platforms', () {
+    final config = File('codemagic.yaml').readAsStringSync();
+    final combined = config.split('  default-workflow:').last;
+    expect(config, contains('  default-workflow:'));
+    for (final required in [
+      'name: Default Workflow',
+      'instance_type: mac_mini_m2',
+      '- rider_signing',
+      'bundle_identifier: com.naijago.gorider',
+      'distribution_type: app_store',
+      'dart run tool/configure_google_sign_in.dart',
+      'flutter analyze',
+      'flutter test --no-pub --concurrency=2',
+      'for TARGET in apk appbundle',
+      'flutter build ipa',
+      'xcode-project use-profiles',
+      '--export-options-plist=/Users/builder/export_options.plist',
+      'build/app/outputs/flutter-apk/*.apk',
+      'build/app/outputs/bundle/release/*.aab',
+      'build/ios/ipa/*.ipa',
+    ]) {
+      expect(combined, contains(required));
+    }
+    for (final variable in [
+      'CM_KEYSTORE',
+      'CM_KEYSTORE_PASSWORD',
+      'CM_KEY_ALIAS',
+      'CM_KEY_PASSWORD',
+    ]) {
+      expect(combined, contains('\u0024{$variable:?'));
+    }
+    expect(combined, isNot(contains('--export-method')));
+  });
+  test('combined build collects artifacts without automatic publication', () {
+    final combined = File(
+      'codemagic.yaml',
+    ).readAsStringSync().split('  default-workflow:').last;
+    expect(combined, isNot(contains('publishing:')));
+    expect(combined, isNot(contains('submit_to_testflight:')));
+    expect(combined, isNot(contains('triggering:')));
+  });
   test('every CI workflow supplies the matching public Google clients', () {
     final yaml = File(
       'codemagic.yaml',
@@ -11,7 +52,7 @@ void main() {
       r'^    environment:',
       multiLine: true,
     ).allMatches(yaml).length;
-    expect(environments, 2);
+    expect(environments, 3);
     for (final entry in {
       'GOOGLE_SERVER_CLIENT_ID':
           '878060644963-ujmbu0ka7g3rh07muknotij2lbsaq4oh.apps.googleusercontent.com',

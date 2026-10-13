@@ -159,3 +159,104 @@ workflows:
       app_store_connect:
         auth: integration
         submit_to_testflight: true
+
+  default-workflow:
+    name: Default Workflow
+    max_build_duration: 90
+    instance_type: mac_mini_m2
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+      groups:
+        - rider_signing
+      vars:
+        GOOGLE_SERVER_CLIENT_ID: "878060644963-ujmbu0ka7g3rh07muknotij2lbsaq4oh.apps.googleusercontent.com"
+        GOOGLE_IOS_CLIENT_ID: "878060644963-pfh25sa295qbh5fqqbhecegnpnclsc95.apps.googleusercontent.com"
+        PACKAGE_NAME: "com.naijago.gorider"
+        API_BASE_URL: "https://naijago-backend.onrender.com"
+        ONESIGNAL_APP_ID: "d53ab8f7-7a3b-40e4-b3a3-025fa64004d1"
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.naijago.gorider
+    cache:
+      cache_paths:
+        - ~/.pub-cache
+        - ~/.gradle/caches
+        - ~/.gradle/wrapper
+        - ~/Library/Caches/CocoaPods
+    scripts:
+      - name: Validate combined release configuration
+        script: |
+          set -euo pipefail
+          cd "$CM_BUILD_DIR"
+          : "${API_BASE_URL:?Set the rider backend URL}"
+          : "${ONESIGNAL_APP_ID:?Set the public rider OneSignal app ID}"
+          : "${GOOGLE_SERVER_CLIENT_ID:?Set the public Google server client ID}"
+          : "${GOOGLE_IOS_CLIENT_ID:?Set the public Google iOS client ID}"
+          : "${CM_KEYSTORE:?Add CM_KEYSTORE to rider_signing}"
+          : "${CM_KEYSTORE_PASSWORD:?Add CM_KEYSTORE_PASSWORD to rider_signing}"
+          : "${CM_KEY_ALIAS:?Add CM_KEY_ALIAS to rider_signing}"
+          : "${CM_KEY_PASSWORD:?Add CM_KEY_PASSWORD to rider_signing}"
+          APP_VERSION="$(awk '$1 == "version:" {print $2; exit}' pubspec.yaml)"
+          test -n "$APP_VERSION"
+          printf 'APP_VERSION=%s\n' "$APP_VERSION" >> "$CM_ENV"
+      - name: Set up local.properties
+        script: |
+          set -euo pipefail
+          printf 'flutter.sdk=%s\n' "${FLUTTER_ROOT:-$HOME/programs/flutter}" > "$CM_BUILD_DIR/android/local.properties"
+      - name: Install dependencies and prepare Google callback
+        script: |
+          set -euo pipefail
+          cd "$CM_BUILD_DIR"
+          flutter pub get
+          dart run tool/configure_google_sign_in.dart
+      - name: Analyze and run local tests
+        script: |
+          set -euo pipefail
+          flutter analyze
+          flutter test --no-pub --concurrency=2
+      - name: Configure Android signing
+        script: |
+          set -euo pipefail
+          echo "$CM_KEYSTORE" | base64 --decode > "$CM_BUILD_DIR/android/app/upload-keystore.jks"
+          {
+            printf "%s\n" "storePassword=$CM_KEYSTORE_PASSWORD"
+            printf "%s\n" "keyPassword=$CM_KEY_PASSWORD"
+            printf "%s\n" "keyAlias=$CM_KEY_ALIAS"
+            printf "%s\n" "storeFile=upload-keystore.jks"
+          } > "$CM_BUILD_DIR/android/key.properties"
+      - name: Install pods and configure iOS signing
+        script: |
+          set -euo pipefail
+          cd "$CM_BUILD_DIR/ios"
+          pod install
+          cd "$CM_BUILD_DIR"
+          xcode-project use-profiles
+      - name: Build Android APK and AAB
+        script: |
+          set -euo pipefail
+          for TARGET in apk appbundle; do
+            flutter build "$TARGET" --release --no-pub \
+              --dart-define=APP_VERSION="$APP_VERSION" \
+              --dart-define=API_BASE_URL="$API_BASE_URL" \
+              --dart-define=GOOGLE_SERVER_CLIENT_ID="$GOOGLE_SERVER_CLIENT_ID" \
+              --dart-define=GOOGLE_IOS_CLIENT_ID="$GOOGLE_IOS_CLIENT_ID" \
+              --dart-define=ONESIGNAL_APP_ID="$ONESIGNAL_APP_ID"
+          done
+      - name: Build signed iOS IPA
+        script: |
+          set -euo pipefail
+          flutter build ipa --release --no-pub \
+            --export-options-plist=/Users/builder/export_options.plist \
+            --dart-define=APP_VERSION="$APP_VERSION" \
+            --dart-define=API_BASE_URL="$API_BASE_URL" \
+            --dart-define=GOOGLE_SERVER_CLIENT_ID="$GOOGLE_SERVER_CLIENT_ID" \
+            --dart-define=GOOGLE_IOS_CLIENT_ID="$GOOGLE_IOS_CLIENT_ID" \
+            --dart-define=ONESIGNAL_APP_ID="$ONESIGNAL_APP_ID"
+    artifacts:
+      - build/app/outputs/flutter-apk/*.apk
+      - build/app/outputs/bundle/release/*.aab
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    # Build and collect files only; no automatic store or TestFlight publication.
